@@ -452,6 +452,7 @@ def add_material():
     stock_qty = float(request.form.get("stock_qty") or 0)
     total_cost_usd_raw = request.form.get("total_cost_usd", "").strip()
     total_cost_riel_raw = request.form.get("total_cost_riel", "").strip()
+    supplier_name = request.form.get("supplier_name", "").strip()
 
     if not name or not unit:
         flash(g.t("flash_name_unit_required"), "error")
@@ -473,9 +474,9 @@ def add_material():
 
     try:
         db.execute(
-            "INSERT INTO materials (name, unit, stock_qty, cost_per_unit, reorder_threshold) "
-            "VALUES (?, ?, ?, ?, 0)",
-            (name, unit, stock_qty, cost_per_unit),
+            "INSERT INTO materials (name, unit, stock_qty, cost_per_unit, reorder_threshold, supplier_name) "
+            "VALUES (?, ?, ?, ?, 0, ?)",
+            (name, unit, stock_qty, cost_per_unit, supplier_name or None),
         )
         db.commit()
         if stock_qty > 0:

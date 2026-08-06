@@ -10,12 +10,20 @@
 </div>
 
 <div class="section">
-  <div class="card">
-    <h3>{{ t('add_material_title') }}</h3>
+  <div class="materials-toolbar">
+    <span class="materials-count">{{ t('materials_count', count=materials|length) }}</span>
+    <button type="button" class="btn" id="toggle-add-btn" onclick="toggleAddForm()">{{ t('add_material_toggle') }}</button>
+  </div>
+
+  <div class="card" id="add-form-card" style="display:none;">
     <form method="POST" action="{{ url_for('add_material') }}" class="form-grid">
       <div class="field">
         <label for="name">{{ t('name') }}</label>
         <input type="text" id="name" name="name" placeholder="{{ t('material_name_ph') }}" required>
+      </div>
+      <div class="field">
+        <label for="stock_qty">{{ t('starting_stock') }}</label>
+        <input type="number" step="any" id="stock_qty" name="stock_qty" placeholder="10">
       </div>
       <div class="field">
         <label for="unit">{{ t('unit') }}</label>
@@ -31,16 +39,16 @@
         </select>
       </div>
       <div class="field">
-        <label for="stock_qty">{{ t('starting_stock') }}</label>
-        <input type="number" step="any" id="stock_qty" name="stock_qty" placeholder="0">
+        <label for="total_cost_usd">{{ t('material_price_usd_label') }}</label>
+        <input type="number" step="any" id="total_cost_usd" name="total_cost_usd" placeholder="0.00">
       </div>
       <div class="field">
-        <label for="cost_per_unit_usd">{{ t('cost_usd_label') }}</label>
-        <input type="number" step="any" id="cost_per_unit_usd" name="cost_per_unit_usd" placeholder="0.00">
+        <label for="total_cost_riel">{{ t('material_price_riel_label') }}</label>
+        <input type="number" step="any" id="total_cost_riel" name="total_cost_riel" placeholder="0">
       </div>
-      <div class="field">
-        <label for="cost_per_unit_riel">{{ t('cost_riel_label') }}</label>
-        <input type="number" step="any" id="cost_per_unit_riel" name="cost_per_unit_riel" placeholder="0">
+      <div class="field field-wide">
+        <label for="supplier_name">{{ t('supplier_name_label') }}</label>
+        <input type="text" id="supplier_name" name="supplier_name" placeholder="{{ t('supplier_name_ph') }}">
       </div>
       <div class="field field-submit">
         <label>&nbsp;</label>
@@ -53,36 +61,49 @@
 </div>
 
 <script>
+  function toggleAddForm() {
+    const card = document.getElementById('add-form-card');
+    const btn = document.getElementById('toggle-add-btn');
+    const isHidden = card.style.display === 'none';
+    card.style.display = isHidden ? 'block' : 'none';
+    btn.textContent = isHidden ? '{{ t("close_btn") }}' : '{{ t("add_material_toggle") }}';
+    if (isHidden) { document.getElementById('name').focus(); }
+  }
+
   (function () {
     const rate = {{ khr_per_usd }};
-    const usdInput = document.getElementById('cost_per_unit_usd');
-    const rielInput = document.getElementById('cost_per_unit_riel');
+    const usdInput = document.getElementById('total_cost_usd');
+    const rielInput = document.getElementById('total_cost_riel');
     const preview = document.getElementById('cost-preview');
     let lastEdited = null;
 
     function updatePreview() {
       if (lastEdited === 'usd' && usdInput.value) {
-        const usd = parseFloat(usdInput.value) || 0;
-        preview.textContent = `≈ ៛${Math.round(usd * rate).toLocaleString()}`;
+        preview.textContent = '≈ ៛' + Math.round((parseFloat(usdInput.value) || 0) * rate).toLocaleString();
       } else if (lastEdited === 'riel' && rielInput.value) {
-        const riel = parseFloat(rielInput.value) || 0;
-        preview.textContent = `≈ $${(riel / rate).toFixed(2)}`;
+        preview.textContent = '≈ $' + ((parseFloat(rielInput.value) || 0) / rate).toFixed(2);
       } else {
         preview.textContent = '';
       }
     }
-
     usdInput.addEventListener('input', function () { lastEdited = 'usd'; updatePreview(); });
     rielInput.addEventListener('input', function () { lastEdited = 'riel'; updatePreview(); });
-
     document.querySelector('.form-grid').addEventListener('submit', function () {
       if (lastEdited === 'usd') { rielInput.value = ''; }
       if (lastEdited === 'riel') { usdInput.value = ''; }
     });
   })();
 
+  function toggleActions(id) {
+    document.querySelectorAll('.actions-menu').forEach(function (el) {
+      if (el.id !== 'actions-' + id) el.style.display = 'none';
+    });
+    const menu = document.getElementById('actions-' + id);
+    menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
+  }
+
   function togglePanel(id) {
-    // Closes any other open panel for the same material, then toggles this one.
+    document.querySelectorAll('.actions-menu').forEach(function (el) { el.style.display = 'none'; });
     const group = id.split('-')[1];
     document.querySelectorAll('.material-panel[data-group="' + group + '"]').forEach(function (el) {
       if (el.id !== id) el.style.display = 'none';
@@ -90,166 +111,154 @@
     const panel = document.getElementById(id);
     panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
   }
+
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.actions-cell')) {
+      document.querySelectorAll('.actions-menu').forEach(function (el) { el.style.display = 'none'; });
+    }
+  });
 </script>
 
 <div class="section">
   {% if materials %}
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>{{ t('name') }}</th>
-          <th>{{ t('unit') }}</th>
-          <th class="num">{{ t('stock_qty_col') }}</th>
-          <th class="num">{{ t('cost_unit_col') }}</th>
-          <th>{{ t('supplier_col') }}</th>
-          <th>{{ t('status_col') }}</th>
-          <th>{{ t('manage_col') }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for m in materials %}
-        <tr>
-          <td>{{ m.name }}</td>
-          <td>{{ m.unit }}</td>
-          <td class="num mono">{{ '%.2f'|format(m.stock_qty) }}</td>
-          <td class="num mono">${{ '%.2f'|format(m.cost_per_unit) }}<br><span class="riel-amount">៛{{ '{:,.0f}'.format(m.cost_per_unit * khr_per_usd) }}</span></td>
-          <td>
-            {% if m.supplier_name or m.supplier_contact %}
-              {{ m.supplier_name or '' }}{% if m.supplier_contact %}<br><span class="riel-amount">{{ m.supplier_contact }}</span>{% endif %}
-            {% else %}
-              <span class="riel-amount">—</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if m.stock_qty <= 0 %}
-              <span class="badge low">{{ t('low_badge') }}</span>
-            {% else %}
-              <span class="badge ok">{{ t('ok_badge') }}</span>
-            {% endif %}
-          </td>
-          <td>
-            <div class="manage-btns">
-              <button type="button" class="secondary btn-sm" onclick="togglePanel('restock-{{ m.id }}')">{{ t('restock_btn_action') }}</button>
-              <button type="button" class="secondary btn-sm" onclick="togglePanel('edit-{{ m.id }}')">{{ t('edit_btn') }}</button>
-              <button type="button" class="secondary btn-sm" onclick="togglePanel('history-{{ m.id }}')">{{ t('history_btn') }}</button>
-              <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');">
-                <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
-              </form>
-            </div>
-          </td>
-        </tr>
-        <tr id="restock-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
-          <td colspan="7">
-            <form method="POST" action="{{ url_for('restock_material', material_id=m.id) }}" class="form-grid panel-form">
-              <div class="field">
-                <label>{{ t('restock_qty_label') }}</label>
-                <input type="number" step="any" name="qty" placeholder="0" required>
-              </div>
-              <div class="field">
-                <label>{{ t('total_paid_usd_ph') }}</label>
-                <input type="number" step="any" name="total_cost_usd" placeholder="0.00">
-              </div>
-              <div class="field">
-                <label>{{ t('total_paid_riel_ph') }}</label>
-                <input type="number" step="any" name="total_cost_riel" placeholder="0">
-              </div>
-              <div class="field">
-                <label>{{ t('restock_note_label') }}</label>
-                <input type="text" name="note" placeholder="{{ t('note_optional_ph') }}">
-              </div>
-              <div class="field field-submit">
-                <label>&nbsp;</label>
-                <button type="submit">{{ t('save_restock_btn') }}</button>
-              </div>
-            </form>
-            <p class="field-hint">{{ t('total_paid_hint') }}</p>
-          </td>
-        </tr>
-        <tr id="edit-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
-          <td colspan="7">
-            <form method="POST" action="{{ url_for('edit_material', material_id=m.id) }}" class="form-grid panel-form">
-              <div class="field">
-                <label>{{ t('name') }}</label>
-                <input type="text" name="name" value="{{ m.name }}" required>
-              </div>
-              <div class="field">
-                <label>{{ t('unit') }}</label>
-                <select name="unit" required>
-                  <option value="kg" {{ 'selected' if m.unit == 'kg' }}>{{ t('unit_kg') }}</option>
-                  <option value="g" {{ 'selected' if m.unit == 'g' }}>{{ t('unit_g') }}</option>
-                  <option value="l" {{ 'selected' if m.unit == 'l' }}>{{ t('unit_l') }}</option>
-                  <option value="ml" {{ 'selected' if m.unit == 'ml' }}>{{ t('unit_ml') }}</option>
-                  <option value="pcs" {{ 'selected' if m.unit == 'pcs' }}>{{ t('unit_pcs') }}</option>
-                  <option value="pack" {{ 'selected' if m.unit == 'pack' }}>{{ t('unit_pack') }}</option>
-                  <option value="box" {{ 'selected' if m.unit == 'box' }}>{{ t('unit_box') }}</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>{{ t('cost_usd_label') }}</label>
-                <input type="number" step="any" name="cost_per_unit_usd" placeholder="{{ '%.2f'|format(m.cost_per_unit) }}">
-              </div>
-              <div class="field">
-                <label>{{ t('cost_riel_label') }}</label>
-                <input type="number" step="any" name="cost_per_unit_riel" placeholder="{{ '{:,.0f}'.format(m.cost_per_unit * khr_per_usd) }}">
-              </div>
-              <div class="field">
-                <label>{{ t('supplier_name_label') }}</label>
-                <input type="text" name="supplier_name" value="{{ m.supplier_name or '' }}" placeholder="{{ t('supplier_name_ph') }}">
-              </div>
-              <div class="field">
-                <label>{{ t('supplier_contact_label') }}</label>
-                <input type="text" name="supplier_contact" value="{{ m.supplier_contact or '' }}" placeholder="{{ t('supplier_contact_ph') }}">
-              </div>
-              <div class="field field-wide">
-                <label>{{ t('notes_label') }}</label>
-                <input type="text" name="notes" value="{{ m.notes or '' }}" placeholder="{{ t('notes_ph') }}">
-              </div>
-              <div class="field field-submit">
-                <label>&nbsp;</label>
-                <button type="submit">{{ t('save_edit_btn') }}</button>
-              </div>
-            </form>
-            <p class="field-hint">{{ t('cost_hint') }}</p>
-          </td>
-        </tr>
-        <tr id="history-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
-          <td colspan="7">
-            {% set hist = history_by_material.get(m.id, []) %}
-            {% if hist %}
-            <table class="history-table">
-              <thead>
-                <tr>
-                  <th>{{ t('history_date_col') }}</th>
-                  <th class="num">{{ t('history_change_col') }}</th>
-                  <th>{{ t('history_reason_col') }}</th>
-                  <th>{{ t('history_note_col') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for h in hist %}
-                <tr>
-                  <td>{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-                  <td class="num mono {{ 'margin-pos' if h.change_qty > 0 else 'margin-neg' }}">{{ '%+.2f'|format(h.change_qty) }}</td>
-                  <td>
-                    {% if h.reason == 'restock' %}{{ t('reason_restock') }}
-                    {% elif h.reason == 'adjustment' %}{{ t('reason_adjustment') }}
-                    {% elif h.reason == 'used_in_order' %}{{ t('reason_used_in_order') }}
-                    {% else %}{{ h.reason }}{% endif %}
-                  </td>
-                  <td>{{ h.note or '' }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-            {% else %}
-            <div class="empty-state">{{ t('history_empty') }}</div>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="material-list">
+    <div class="material-list-head">
+      <span>{{ t('name') }}</span>
+      <span>{{ t('stock_qty_col') }}</span>
+      <span>{{ t('cost_unit_col') }}</span>
+      <span>{{ t('status_col') }}</span>
+      <span></span>
+    </div>
+    {% for m in materials %}
+    <div class="material-list-row">
+      <span class="ml-name">{{ m.name }}</span>
+      <span class="mono">{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }}</span>
+      <span class="mono">${{ '%.2f'|format(m.cost_per_unit) }}</span>
+      <span>
+        {% if m.stock_qty <= 0 %}
+          <span class="badge low">{{ t('low_badge') }}</span>
+        {% else %}
+          <span class="badge ok">{{ t('ok_badge') }}</span>
+        {% endif %}
+      </span>
+      <span class="actions-cell">
+        <button type="button" class="dots-btn" aria-label="{{ t('actions_menu_label') }}" onclick="toggleActions({{ m.id }})">⋯</button>
+        <div class="actions-menu" id="actions-{{ m.id }}">
+          <button type="button" onclick="togglePanel('restock-{{ m.id }}'); toggleActions({{ m.id }});">{{ t('restock_btn_action') }}</button>
+          <button type="button" onclick="togglePanel('edit-{{ m.id }}'); toggleActions({{ m.id }});">{{ t('edit_btn') }}</button>
+          <button type="button" onclick="togglePanel('history-{{ m.id }}'); toggleActions({{ m.id }});">{{ t('history_btn') }}</button>
+          <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');">
+            <button type="submit" class="danger-item">{{ t('delete_btn') }}</button>
+          </form>
+        </div>
+      </span>
+    </div>
+
+    <div id="restock-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
+      <form method="POST" action="{{ url_for('restock_material', material_id=m.id) }}" class="form-grid panel-form">
+        <div class="field">
+          <label>{{ t('restock_qty_label') }}</label>
+          <input type="number" step="any" name="qty" placeholder="0" required>
+        </div>
+        <div class="field">
+          <label>{{ t('total_paid_usd_ph') }}</label>
+          <input type="number" step="any" name="total_cost_usd" placeholder="0.00">
+        </div>
+        <div class="field">
+          <label>{{ t('total_paid_riel_ph') }}</label>
+          <input type="number" step="any" name="total_cost_riel" placeholder="0">
+        </div>
+        <div class="field">
+          <label>{{ t('restock_note_label') }}</label>
+          <input type="text" name="note" placeholder="{{ t('note_optional_ph') }}">
+        </div>
+        <div class="field field-submit">
+          <label>&nbsp;</label>
+          <button type="submit">{{ t('save_restock_btn') }}</button>
+        </div>
+      </form>
+      <p class="field-hint">{{ t('total_paid_hint') }}</p>
+    </div>
+
+    <div id="edit-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
+      <form method="POST" action="{{ url_for('edit_material', material_id=m.id) }}" class="form-grid panel-form">
+        <div class="field">
+          <label>{{ t('name') }}</label>
+          <input type="text" name="name" value="{{ m.name }}" required>
+        </div>
+        <div class="field">
+          <label>{{ t('unit') }}</label>
+          <select name="unit" required>
+            <option value="kg" {{ 'selected' if m.unit == 'kg' }}>{{ t('unit_kg') }}</option>
+            <option value="g" {{ 'selected' if m.unit == 'g' }}>{{ t('unit_g') }}</option>
+            <option value="l" {{ 'selected' if m.unit == 'l' }}>{{ t('unit_l') }}</option>
+            <option value="ml" {{ 'selected' if m.unit == 'ml' }}>{{ t('unit_ml') }}</option>
+            <option value="pcs" {{ 'selected' if m.unit == 'pcs' }}>{{ t('unit_pcs') }}</option>
+            <option value="pack" {{ 'selected' if m.unit == 'pack' }}>{{ t('unit_pack') }}</option>
+            <option value="box" {{ 'selected' if m.unit == 'box' }}>{{ t('unit_box') }}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>{{ t('cost_usd_label') }}</label>
+          <input type="number" step="any" name="cost_per_unit_usd" placeholder="{{ '%.2f'|format(m.cost_per_unit) }}">
+        </div>
+        <div class="field">
+          <label>{{ t('cost_riel_label') }}</label>
+          <input type="number" step="any" name="cost_per_unit_riel" placeholder="{{ '{:,.0f}'.format(m.cost_per_unit * khr_per_usd) }}">
+        </div>
+        <div class="field">
+          <label>{{ t('supplier_name_label') }}</label>
+          <input type="text" name="supplier_name" value="{{ m.supplier_name or '' }}" placeholder="{{ t('supplier_name_ph') }}">
+        </div>
+        <div class="field">
+          <label>{{ t('supplier_contact_label') }}</label>
+          <input type="text" name="supplier_contact" value="{{ m.supplier_contact or '' }}" placeholder="{{ t('supplier_contact_ph') }}">
+        </div>
+        <div class="field field-wide">
+          <label>{{ t('notes_label') }}</label>
+          <input type="text" name="notes" value="{{ m.notes or '' }}" placeholder="{{ t('notes_ph') }}">
+        </div>
+        <div class="field field-submit">
+          <label>&nbsp;</label>
+          <button type="submit">{{ t('save_edit_btn') }}</button>
+        </div>
+      </form>
+      <p class="field-hint">{{ t('cost_hint') }}</p>
+    </div>
+
+    <div id="history-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
+      {% set hist = history_by_material.get(m.id, []) %}
+      {% if hist %}
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th>{{ t('history_date_col') }}</th>
+            <th class="num">{{ t('history_change_col') }}</th>
+            <th>{{ t('history_reason_col') }}</th>
+            <th>{{ t('history_note_col') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in hist %}
+          <tr>
+            <td>{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="num mono {{ 'margin-pos' if h.change_qty > 0 else 'margin-neg' }}">{{ '%+.2f'|format(h.change_qty) }}</td>
+            <td>
+              {% if h.reason == 'restock' %}{{ t('reason_restock') }}
+              {% elif h.reason == 'adjustment' %}{{ t('reason_adjustment') }}
+              {% elif h.reason == 'used_in_order' %}{{ t('reason_used_in_order') }}
+              {% else %}{{ h.reason }}{% endif %}
+            </td>
+            <td>{{ h.note or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">{{ t('history_empty') }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
   </div>
   {% else %}
   <div class="empty-state">{{ t('no_materials_yet') }}</div>
