@@ -1,0 +1,16 @@
+{
+  "name": "ពងទាប្រៃបេកខេរី",
+  "short_name": "បេកខេរី",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF5EA",
+  "theme_color": "#2E2118",
+  "icons": [
+    {
+      "src": "/static/img/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}{{ t('reports_title') }} — {{ t('app_name') }}{% endblock %}
+{% block content %}
+
+<div class="page-title">
+  <div>
+    <h1>{{ t('reports_title') }}</h1>
+    <p>{{ t('reports_sub', days=days) }}</p>
+  </div>
+  <form method="GET" class="form-row" style="align-items:center;">
+    <select name="days" onchange="this.form.submit()">
+      <option value="7" {{ 'selected' if days == 7 }}>{{ t('last_7') }}</option>
+      <option value="30" {{ 'selected' if days == 30 }}>{{ t('last_30') }}</option>
+      <option value="90" {{ 'selected' if days == 90 }}>{{ t('last_90') }}</option>
+      <option value="365" {{ 'selected' if days == 365 }}>{{ t('last_365') }}</option>
+    </select>
+  </form>
+</div>
+
+<div class="card-grid">
+  <div class="stat-card">
+    <div class="label">{{ t('income_label') }}</div>
+    <div class="value">${{ '%.2f'|format(total_income) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">{{ t('material_cost_label') }}</div>
+    <div class="value">${{ '%.2f'|format(material_cost) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">{{ t('other_expenses_label') }}</div>
+    <div class="value">${{ '%.2f'|format(total_expenses) }}</div>
+  </div>
+  <div class="stat-card {{ 'warn' if net_profit < 0 }}">
+    <div class="label">{{ t('net_profit_label') }}</div>
+    <div class="value">${{ '%.2f'|format(net_profit) }}</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>{{ t('daily_income_title') }}</h2>
+  {% if daily_income %}
+    {% set max_total = daily_income|map(attribute='total')|max %}
+    <div class="bar-chart">
+      {% for d in daily_income %}
+      <div class="bar-col">
+        <div class="bar-value mono">${{ '%.0f'|format(d.total) }}</div>
+        <div class="bar" style="height: {{ ((d.total / max_total) * 100)|round(0) if max_total > 0 else 0 }}%;" title="${{ '%.2f'|format(d.total) }}"></div>
+        <div class="bar-label">{{ d.day.strftime('%m-%d') }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+  <div class="empty-state">{{ t('no_sales_period') }}</div>
+  {% endif %}
+</div>
+
+<div class="section">
+  <h2>{{ t('by_product_title') }}</h2>
+  {% if by_product %}
+    {% set max_product_total = by_product|map(attribute='total')|max %}
+    <div class="hbar-chart">
+      {% for p in by_product %}
+      <div class="hbar-row">
+        <div class="hbar-label">{{ p.name }}</div>
+        <div class="hbar-track">
+          <div class="hbar-fill" style="width: {{ ((p.total / max_product_total) * 100)|round(1) if max_product_total > 0 else 0 }}%;"></div>
+        </div>
+        <div class="hbar-value mono">${{ '%.2f'|format(p.total) }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>{{ t('product_col') }}</th><th class="num">{{ t('units_sold_col') }}</th><th class="num">{{ t('total_income_col') }}</th></tr></thead>
+      <tbody>
+        {% for p in by_product %}
+        <tr>
+          <td>{{ p.name }}</td>
+          <td class="num mono">{{ p.units }}</td>
+          <td class="num mono">${{ '%.2f'|format(p.total) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">{{ t('no_sales_period') }}</div>
+  {% endif %}
+</div>
+
+<div class="section">
+  <div class="card">
+    <h3>{{ t('log_expense_title') }}</h3>
+    <p style="color:#8A7A63; font-size:0.88rem; margin-top:-8px;">{{ t('log_expense_sub') }}</p>
+    <form method="POST" action="{{ url_for('add_expense') }}" class="form-row" id="expense-form">
+      <div class="field">
+        <label for="category">{{ t('category_label') }}</label>
+        <input type="text" id="category" name="category" placeholder="{{ t('category_ph') }}" required>
+      </div>
+      <div class="field">
+        <label for="amount_usd">{{ t('amount_usd_label') }}</label>
+        <input type="number" step="any" id="amount_usd" name="amount_usd" placeholder="0.00" style="width:120px">
+      </div>
+      <div class="field">
+        <label for="amount_riel">{{ t('amount_riel_label') }}</label>
+        <input type="number" step="any" id="amount_riel" name="amount_riel" placeholder="0" style="width:120px">
+      </div>
+      <div class="field">
+        <label for="note">{{ t('order_note_label') }}</label>
+        <input type="text" id="note" name="note" placeholder="" style="width:160px">
+      </div>
+      <button type="submit">{{ t('log_expense_btn') }}</button>
+    </form>
+    <p class="field-hint">{{ t('cost_hint') }}</p>
+    <p class="field-hint currency-preview" id="expense-preview"></p>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const rate = {{ khr_per_usd }};
+    const usdInput = document.getElementById('amount_usd');
+    const rielInput = document.getElementById('amount_riel');
+    const preview = document.getElementById('expense-preview');
+    let lastEdited = null;
+
+    function updatePreview() {
+      if (lastEdited === 'usd' && usdInput.value) {
+        const usd = parseFloat(usdInput.value) || 0;
+        preview.textContent = `≈ ៛${Math.round(usd * rate).toLocaleString()}`;
+      } else if (lastEdited === 'riel' && rielInput.value) {
+        const riel = parseFloat(rielInput.value) || 0;
+        preview.textContent = `≈ $${(riel / rate).toFixed(2)}`;
+      } else {
+        preview.textContent = '';
+      }
+    }
+
+    usdInput.addEventListener('input', function () { lastEdited = 'usd'; updatePreview(); });
+    rielInput.addEventListener('input', function () { lastEdited = 'riel'; updatePreview(); });
+    document.getElementById('expense-form').addEventListener('submit', function () {
+      if (lastEdited === 'usd') { rielInput.value = ''; }
+      if (lastEdited === 'riel') { usdInput.value = ''; }
+    });
+  })();
+</script>
+
+{% if recent_expenses %}
+<div class="section">
+  <h2>{{ t('expenses_period_title') }}</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>{{ t('category_label') }}</th><th class="num">{{ t('amount_label') }}</th><th>{{ t('order_note_label') }}</th><th>{{ t('when') }}</th></tr></thead>
+      <tbody>
+        {% for e in recent_expenses %}
+        <tr>
+          <td>{{ e.category }}</td>
+          <td class="num mono">${{ '%.2f'|format(e.amount) }} <span class="riel-amount">/ ៛{{ '{:,.0f}'.format(e.amount * khr_per_usd) }}</span></td>
+          <td>{{ e.note or '' }}</td>
+          <td>{{ e.spent_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

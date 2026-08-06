@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}{{ t('dash_title') }} — {{ t('app_name') }}{% endblock %}
+{% block content %}
+
+<div class="page-title">
+  <div>
+    <h1>{{ t('dash_title') }}</h1>
+    <p>{{ t('dash_sub') }}</p>
+  </div>
+</div>
+
+<div class="card-grid">
+  <div class="stat-card">
+    <div class="label">{{ t('today_income') }}</div>
+    <div class="value">${{ '%.2f'|format(today_total) }}</div>
+    <div class="sub">{{ today_units }} {{ t('items_sold') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">{{ t('last_7_days') }}</div>
+    <div class="value">${{ '%.2f'|format(week_total) }}</div>
+    <div class="sub">{{ t('total_income_label') }}</div>
+  </div>
+  <div class="stat-card {{ 'warn' if low_stock|length > 0 }}">
+    <div class="label">{{ t('low_stock_items') }}</div>
+    <div class="value">{{ low_stock|length }}</div>
+    <div class="sub">{{ t('needs_attention') if low_stock|length > 0 else t('all_good') }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">{{ t('materials_products') }}</div>
+    <div class="value">{{ material_count }} / {{ product_count }}</div>
+    <div class="sub">{{ t('tracked_count') }}</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-head">
+    <h2>{{ t('dashboard_chart_title') }}</h2>
+    <form method="GET" class="form-row" style="align-items:center;">
+      <select name="chart_days" onchange="this.form.submit()">
+        <option value="7" {{ 'selected' if chart_days == 7 }}>{{ t('last_7_short') }}</option>
+        <option value="30" {{ 'selected' if chart_days == 30 }}>{{ t('last_30_short') }}</option>
+        <option value="90" {{ 'selected' if chart_days == 90 }}>{{ t('last_90_short') }}</option>
+      </select>
+    </form>
+  </div>
+  {% if chart_data %}
+    {% set max_total = chart_data|map(attribute='total')|max %}
+    <div class="bar-chart">
+      {% for d in chart_data %}
+      <div class="bar-col">
+        <div class="bar-value mono">${{ '%.0f'|format(d.total) }}</div>
+        <div class="bar" style="height: {{ ((d.total / max_total) * 100)|round(0) if max_total > 0 else 0 }}%;" title="${{ '%.2f'|format(d.total) }} — {{ d.order_count }} {{ t('order_count_label') }}"></div>
+        <div class="bar-label">{{ d.day.strftime('%m-%d') }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty-state">{{ t('no_sales_period') }}</div>
+  {% endif %}
+</div>
+
+{% if low_stock %}
+<div class="section">
+  <div class="section-head">
+    <h2>{{ t('running_low') }}</h2>
+    <a href="{{ url_for('materials') }}" class="btn secondary">{{ t('restock_btn') }}</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>{{ t('name') }}</th><th class="num">{{ t('in_stock') }}</th><th>{{ t('status_col') }}</th></tr>
+      </thead>
+      <tbody>
+        {% for m in low_stock %}
+        <tr>
+          <td>{{ m.name }}</td>
+          <td class="num mono">{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }}</td>
+          <td><span class="badge low">{{ t('low_badge') }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="section">
+  <div class="section-head">
+    <h2>{{ t('recent_orders') }}</h2>
+    <a href="{{ url_for('orders') }}" class="btn secondary">{{ t('log_order_btn') }}</a>
+  </div>
+  {% if recent_orders %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>{{ t('customer') }}</th><th class="num">{{ t('total') }}</th><th class="num">{{ t('profit') }}</th><th>{{ t('when') }}</th></tr>
+      </thead>
+      <tbody>
+        {% for o in recent_orders %}
+        <tr>
+          <td>{{ o.customer_name or t('walk_in_customer') }}</td>
+          <td class="num mono">${{ '%.2f'|format(o.total_amount) }}</td>
+          <td class="num mono">${{ '%.2f'|format(o.total_profit) }}</td>
+          <td>{{ o.ordered_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">{{ t('no_orders_yet') }}</div>
+  {% endif %}
+</div>
+
+{% endblock %}

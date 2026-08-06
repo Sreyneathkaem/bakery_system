@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ t('app_name') }}{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <link rel="icon" href="{{ url_for('static', filename='img/logo.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/logo.png') }}">
+  <meta name="theme-color" content="#2E2118">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ t('app_name') }}" class="brand-logo">
+      <span>{{ t('app_name') }}</span>
+    </div>
+    <nav class="tabs">
+      <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">{{ t('nav_dashboard') }}</a>
+      <a href="{{ url_for('materials') }}" class="{{ 'active' if request.endpoint == 'materials' }}">{{ t('nav_materials') }}</a>
+      <a href="{{ url_for('products') }}" class="{{ 'active' if request.endpoint == 'products' }}">{{ t('nav_products') }}</a>
+      <a href="{{ url_for('orders') }}" class="{{ 'active' if request.endpoint == 'orders' }}">{{ t('nav_orders') }}</a>
+      <a href="{{ url_for('reports') }}" class="{{ 'active' if request.endpoint == 'reports' }}">{{ t('nav_reports') }}</a>
+    </nav>
+    <div class="header-right">
+      <a href="{{ url_for('settings') }}" class="settings-icon-link {{ 'active' if request.endpoint == 'settings' }}" title="{{ t('nav_settings') }}">⚙</a>
+      <div class="lang-toggle">
+        <a href="{{ url_for('set_lang', code='km') }}" class="{{ 'active' if current_lang == 'km' }}">ខ្មែរ</a>
+        <span>/</span>
+        <a href="{{ url_for('set_lang', code='en') }}" class="{{ 'active' if current_lang == 'en' }}">EN</a>
+      </div>
+      <a href="{{ url_for('logout') }}" class="logout-link">{{ t('logout') }}</a>
+    </div>
+  </header>
+
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

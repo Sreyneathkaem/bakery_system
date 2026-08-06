@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ t('login_title') }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+  <link rel="icon" href="{{ url_for('static', filename='img/logo.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/logo.png') }}">
+  <meta name="theme-color" content="#2E2118">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="lang-toggle login-lang-toggle">
+        <a href="{{ url_for('set_lang', code='km') }}" class="{{ 'active' if current_lang == 'km' }}">ខ្មែរ</a>
+        <span>/</span>
+        <a href="{{ url_for('set_lang', code='en') }}" class="{{ 'active' if current_lang == 'en' }}">EN</a>
+      </div>
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ t('app_name') }}" class="login-logo">
+      <h1>{{ t('login_title') }}</h1>
+      <p>{{ t('login_sub') }}</p>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form method="POST">
+        <input type="email" name="email" placeholder="{{ t('login_email_placeholder') }}" autofocus required>
+        <input type="password" name="password" placeholder="{{ t('login_placeholder') }}" required>
+        <button type="submit">{{ t('login_btn') }}</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

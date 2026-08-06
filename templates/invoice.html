@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}{{ t('invoice_title_km') }} #{{ order.id }} — {{ t('app_name') }}{% endblock %}
+{% block content %}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<div class="page-title">
+  <div>
+    <h1>{{ t('invoice_title_km') }} #{{ order.id }}</h1>
+  </div>
+  <a href="{{ url_for('orders') }}" class="btn secondary">&larr; {{ t('back_to_orders') }}</a>
+</div>
+
+<div class="invoice-card" id="invoice-card">
+  <div class="invoice-head">
+    <div class="invoice-shop-block">
+      <img src="{{ url_for('static', filename='img/logo.png') }}" alt="{{ shop_name }}" class="invoice-logo">
+      <div>
+        <div class="invoice-shop">{{ shop_name }}</div>
+        {% if shop_phone %}<div class="invoice-shop-sub mono">Tel: {{ shop_phone }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="invoice-title-block">
+      <div class="invoice-title-km">{{ t('invoice_title_km') }}</div>
+      <div class="invoice-title-en">{{ t('invoice_title_en') }}</div>
+    </div>
+  </div>
+
+  <div class="invoice-buyer-grid">
+    <div class="invoice-buyer-fields">
+      <div><span class="invoice-field-label">{{ t('buyer_name_label') }}:</span> {{ order.customer_name or '—' }}</div>
+      <div><span class="invoice-field-label">{{ t('buyer_tel_label') }}:</span> {{ order.customer_phone or '—' }}</div>
+      <div><span class="invoice-field-label">{{ t('buyer_address_label') }}:</span> {{ order.customer_address or '—' }}</div>
+    </div>
+    <div class="invoice-meta-fields">
+      <div><span class="invoice-field-label">{{ t('invoice_no_label') }}:</span> <span class="mono">#{{ order.id }}</span></div>
+      <div><span class="invoice-field-label">{{ t('invoice_date_label') }}:</span> <span class="mono">{{ order.ordered_at.strftime('%Y-%m-%d %H:%M') }}</span></div>
+    </div>
+  </div>
+
+  <div class="table-wrap" style="margin-top:14px;">
+    <table class="invoice-table">
+      <thead>
+        <tr>
+          <th class="num" style="width:40px;">{{ t('col_no') }}</th>
+          <th>{{ t('col_goods_name') }}</th>
+          <th class="num">{{ t('col_qty') }}</th>
+          <th class="num">{{ t('col_unit_price') }}</th>
+          <th class="num">{{ t('col_amount') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+        <tr>
+          <td class="num mono">{{ loop.index }}</td>
+          <td>{{ it.product_name }}</td>
+          <td class="num mono">{{ it.quantity }}</td>
+          <td class="num mono">${{ '%.2f'|format(it.unit_price) }}</td>
+          <td class="num mono">${{ '%.2f'|format(it.line_total) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="invoice-total-row">
+    <span>{{ t('invoice_total_label') }}</span>
+    <span class="mono">${{ '%.2f'|format(order.total_amount) }}</span>
+  </div>
+  <div class="invoice-total-riel mono">≈ ៛{{ '{:,.0f}'.format(order.total_amount * khr_per_usd) }}</div>
+
+  {% if has_qr %}
+  <div class="invoice-qr-wrap">
+    <img src="{{ url_for('payment_qr_image') }}" alt="Payment QR" class="invoice-qr-img">
+    <div class="invoice-qr-label">{{ t('scan_to_pay_label') }}</div>
+  </div>
+  {% endif %}
+
+  {% if order.note %}
+  <div class="invoice-note"><span class="invoice-field-label">{{ t('remarks_label') }}:</span> {{ order.note }}</div>
+  {% endif %}
+
+  <div class="invoice-signatures">
+    <div class="invoice-sign-box">
+      <div class="invoice-sign-line"></div>
+      <div class="invoice-sign-label">{{ t('buyer_signature') }}</div>
+    </div>
+    <div class="invoice-sign-box">
+      <div class="invoice-sign-line"></div>
+      <div class="invoice-sign-label">{{ t('seller_signature') }}</div>
+    </div>
+  </div>
+
+  <div class="invoice-thanks">{{ t('thank_you_msg') }}</div>
+</div>
+
+<div class="section invoice-actions no-print">
+  <button type="button" id="share-btn" class="btn">{{ t('share_btn') }}</button>
+  <button type="button" id="download-btn" class="btn secondary">{{ t('download_image_btn') }}</button>
+  <button type="button" id="copy-btn" class="btn secondary">{{ t('copy_btn') }}</button>
+  <button type="button" id="print-btn" class="btn secondary" onclick="window.print()">{{ t('print_btn') }}</button>
+
+  {% if telegram_shop_enabled %}
+  <button type="button" id="telegram-image-btn" class="btn secondary">{{ t('send_telegram_image_btn') }}</button>
+  {% endif %}
+</div>
+
+<div id="invoice-status" class="no-print" style="max-width:600px; margin:10px auto 0; text-align:center; font-size:0.85rem; color:#8A7A63;"></div>
+
+<textarea id="invoice-text" style="position:absolute; left:-9999px;">{{ invoice_text }}</textarea>
+
+<script>
+  (function () {
+    const invoiceText = document.getElementById('invoice-text').value;
+    const shareBtn = document.getElementById('share-btn');
+    const downloadBtn = document.getElementById('download-btn');
+    const copyBtn = document.getElementById('copy-btn');
+    const telegramImgBtn = document.getElementById('telegram-image-btn');
+    const statusEl = document.getElementById('invoice-status');
+    const card = document.getElementById('invoice-card');
+
+    function setStatus(msg) {
+      statusEl.textContent = msg || '';
+    }
+
+    // Renders the invoice card to a canvas, using the same styling the
+    // person already sees on screen — this keeps Khmer text rendering
+    // correct, since the browser (not this code) handles the script shaping.
+    async function renderInvoiceCanvas() {
+      return await html2canvas(card, { backgroundColor: '#FAF5EA', scale: 2 });
+    }
+
+    function canvasToBlob(canvas) {
+      return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    }
+
+    shareBtn.addEventListener('click', async function () {
+      setStatus("{{ t('generating_image') }}");
+      try {
+        const canvas = await renderInvoiceCanvas();
+        const blob = await canvasToBlob(canvas);
+        const file = new File([blob], 'invoice-{{ order.id }}.png', { type: 'image/png' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Invoice #{{ order.id }}' });
+          setStatus('');
+          return;
+        }
+        if (navigator.share) {
+          await navigator.share({ text: invoiceText });
+          setStatus('');
+          return;
+        }
+        alert("{{ t('share_not_supported') }}");
+        setStatus('');
+      } catch (e) {
+        setStatus('');
+      }
+    });
+
+    downloadBtn.addEventListener('click', async function () {
+      setStatus("{{ t('generating_image') }}");
+      const canvas = await renderInvoiceCanvas();
+      const link = document.createElement('a');
+      link.download = 'invoice-{{ order.id }}.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      setStatus('');
+    });
+
+    copyBtn.addEventListener('click', async function () {
+      try {
+        await navigator.clipboard.writeText(invoiceText);
+        const original = copyBtn.textContent;
+        copyBtn.textContent = "{{ t('copied_msg') }}";
+        setTimeout(() => { copyBtn.textContent = original; }, 1500);
+      } catch (e) {
+        const ta = document.getElementById('invoice-text');
+        ta.style.left = '0';
+        ta.select();
+        document.execCommand('copy');
+        ta.style.left = '-9999px';
+      }
+    });
+
+    {% if telegram_shop_enabled %}
+    telegramImgBtn.addEventListener('click', async function () {
+      setStatus("{{ t('generating_image') }}");
+      try {
+        const canvas = await renderInvoiceCanvas();
+        const dataUrl = canvas.toDataURL('image/png');
+        const resp = await fetch("{{ url_for('send_order_telegram_image', order_id=order.id) }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: dataUrl }),
+        });
+        const result = await resp.json();
+        setStatus(result.ok ? "{{ t('telegram_image_sent') }}" : "{{ t('telegram_image_failed') }}");
+      } catch (e) {
+        setStatus("{{ t('telegram_image_failed') }}");
+      }
+    });
+    {% endif %}
+  })();
+</script>
+
+{% endblock %}

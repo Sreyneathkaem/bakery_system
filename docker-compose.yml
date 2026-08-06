@@ -1,0 +1,54 @@
+services:
+  bakery-tracker:
+    build: .
+    container_name: bakery-tracker
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backups:/app/backups
+    environment:
+      # Change this before you go live!
+      - SECRET_KEY=please-change-this-to-something-random
+
+      # Points at the bundled Postgres container below. Only change this if
+      # you're using Supabase instead — see README.md "Two ways to run this
+      # app" for that path.
+      - DATABASE_URL=postgresql://bakery:bakery@db:5432/bakery
+
+      # Required for login. Create a free Supabase project (used only for
+      # Auth here, not the database, if you're self-hosting Postgres) and
+      # fill these in from Project Settings > API. See README.md.
+      - SUPABASE_URL=
+      - SUPABASE_ANON_KEY=
+
+      # Shown on invoices
+      - SHOP_NAME=ពងទាប្រៃបេកខេរី
+      - SHOP_PHONE=
+
+      # Riel-per-dollar rate, used to show costs and invoice totals in both
+      # currencies. Update this if the rate moves a lot.
+      - KHR_PER_USD=4100
+
+      # Optional: enables the "Send to shop Telegram" button on invoices.
+      # Leave blank to skip — the Share button (works with Telegram,
+      # Messenger, WhatsApp, etc. from the phone's share sheet) works fine
+      # without any of this. See README.md "Telegram Bot setup".
+      - TELEGRAM_BOT_TOKEN=
+      - TELEGRAM_CHAT_ID=
+
+  db:
+    image: postgres:16-alpine
+    container_name: bakery-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=bakery
+      - POSTGRES_PASSWORD=bakery
+      - POSTGRES_DB=bakery
+    volumes:
+      - bakery-db-data:/var/lib/postgresql/data
+
+volumes:
+  bakery-db-data:

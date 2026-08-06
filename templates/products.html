@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}{{ t('products_title') }} — {{ t('app_name') }}{% endblock %}
+{% block content %}
+
+<div class="page-title">
+  <div>
+    <h1>{{ t('products_title') }}</h1>
+    <p>{{ t('products_sub') }}</p>
+  </div>
+</div>
+
+<div class="section">
+  <div class="card">
+    <h3>{{ t('add_product_title') }}</h3>
+    <form method="POST" action="{{ url_for('add_product') }}" class="form-row">
+      <div class="field">
+        <label for="name">{{ t('name') }}</label>
+        <input type="text" id="name" name="name" placeholder="{{ t('product_name_ph') }}" required>
+      </div>
+      <div class="field">
+        <label for="price_usd">{{ t('selling_price_usd') }}</label>
+        <input type="number" step="any" id="price_usd" name="price_usd" placeholder="0.00" style="width:120px">
+      </div>
+      <div class="field">
+        <label for="price_riel">{{ t('selling_price_riel') }}</label>
+        <input type="number" step="any" id="price_riel" name="price_riel" placeholder="0" style="width:120px">
+      </div>
+      <button type="submit">{{ t('add_product_btn') }}</button>
+    </form>
+    <p class="field-hint">{{ t('cost_hint') }}</p>
+    <p class="field-hint currency-preview" id="price-preview"></p>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const rate = {{ khr_per_usd }};
+    const usdInput = document.getElementById('price_usd');
+    const rielInput = document.getElementById('price_riel');
+    const preview = document.getElementById('price-preview');
+    let lastEdited = null;
+
+    function updatePreview() {
+      if (lastEdited === 'usd' && usdInput.value) {
+        const usd = parseFloat(usdInput.value) || 0;
+        preview.textContent = `≈ ៛${Math.round(usd * rate).toLocaleString()}`;
+      } else if (lastEdited === 'riel' && rielInput.value) {
+        const riel = parseFloat(rielInput.value) || 0;
+        preview.textContent = `≈ $${(riel / rate).toFixed(2)}`;
+      } else {
+        preview.textContent = '';
+      }
+    }
+
+    usdInput.addEventListener('input', function () { lastEdited = 'usd'; updatePreview(); });
+    rielInput.addEventListener('input', function () { lastEdited = 'riel'; updatePreview(); });
+    document.querySelector('#name').closest('form').addEventListener('submit', function () {
+      if (lastEdited === 'usd') { rielInput.value = ''; }
+      if (lastEdited === 'riel') { usdInput.value = ''; }
+    });
+  })();
+</script>
+
+<div class="section">
+  {% if products %}
+    {% for item in products %}
+    <div class="card" style="margin-bottom:16px;">
+      <div class="section-head">
+        <div>
+          <h3>{{ item.product.name }} <span class="mono" style="font-weight:400; color:#8A7A63;">— ${{ '%.2f'|format(item.product.price) }} / ៛{{ '{:,.0f}'.format(item.product.price * khr_per_usd) }}</span></h3>
+          {% if item.recipe %}
+          <div class="cost-margin-line mono">
+            {{ t('cost_per_unit_calc') }}: ${{ '%.2f'|format(item.cost_per_unit) }}
+            &nbsp;·&nbsp;
+            {{ t('margin_label') }}:
+            <span class="{{ 'margin-neg' if item.margin < 0 else 'margin-pos' }}">${{ '%.2f'|format(item.margin) }}</span>
+          </div>
+          {% endif %}
+        </div>
+        <form method="POST" action="{{ url_for('delete_product', product_id=item.product.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_product', name=item.product.name) }}');">
+          <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
+        </form>
+      </div>
+
+      <h4 class="recipe-subhead">{{ t('recipe_title') }}</h4>
+
+      <div style="margin-bottom:14px;">
+        {% for r in item.recipe %}
+        <span class="recipe-chip recipe-chip-editable" onclick="fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.batch_qty }}, {{ r.yield_count }})">
+          {{ r.batch_qty|round(3) }}{{ r.unit }} {{ r.material_name }} {{ t('makes_label') }} {{ r.yield_count|round(0)|int }} {{ t('loaves_unit') }}
+          <span class="chip-sub">({{ r.quantity_per_unit|round(4) }}{{ r.unit }}{{ t('per_unit_suffix') }})</span>
+          <form method="POST" action="{{ url_for('remove_recipe_ingredient', ingredient_id=r.id) }}" class="inline-form" onclick="event.stopPropagation();">
+            <button type="submit" title="{{ t('delete_btn') }}">&times;</button>
+          </form>
+        </span>
+        {% else %}
+        <span style="color:#8A7A63; font-size:0.88rem;">{{ t('no_recipe_yet') }}</span>
+        {% endfor %}
+      </div>
+
+      <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="form-grid recipe-form" id="recipe-form-{{ item.product.id }}">
+        <div class="field">
+          <label>{{ t('material_col') }}</label>
+          <select name="material_id" id="recipe-material-{{ item.product.id }}" required>
+            <option value="" disabled selected>{{ t('choose') }}</option>
+            {% for m in all_materials %}
+            <option value="{{ m.id }}">{{ m.name }} ({{ m.unit }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>{{ t('batch_qty_label') }}</label>
+          <input type="number" step="any" name="batch_qty" id="recipe-batch-{{ item.product.id }}" placeholder="1" required>
+        </div>
+        <div class="field">
+          <label>{{ t('yield_count_label') }}</label>
+          <input type="number" step="any" name="yield_count" id="recipe-yield-{{ item.product.id }}" placeholder="20" required>
+        </div>
+        <div class="field field-submit">
+          <label>&nbsp;</label>
+          <button type="submit" class="secondary">{{ t('add_to_recipe_btn') }}</button>
+        </div>
+      </form>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty-state">{{ t('no_products_yet') }}</div>
+  {% endif %}
+</div>
+
+<script>
+  function fillRecipeForm(productId, materialId, batchQty, yieldCount) {
+    document.getElementById('recipe-material-' + productId).value = materialId;
+    document.getElementById('recipe-batch-' + productId).value = batchQty;
+    document.getElementById('recipe-yield-' + productId).value = yieldCount;
+    document.getElementById('recipe-form-' + productId).scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+</script>
+
+{% endblock %}

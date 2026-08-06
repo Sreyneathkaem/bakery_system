@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ t('edit_order_title', id=order.id) }} — {{ t('app_name') }}{% endblock %}
+{% block content %}
+
+<div class="page-title">
+  <div>
+    <h1>{{ t('edit_order_title', id=order.id) }}</h1>
+  </div>
+  <a href="{{ url_for('orders') }}" class="btn secondary">&larr; {{ t('back_to_orders') }}</a>
+</div>
+
+<div class="section">
+  <div class="card">
+    {% if products %}
+    <form method="POST" action="{{ url_for('edit_order', order_id=order.id) }}" id="order-form">
+      <div class="form-row" style="margin-bottom:14px;">
+        <div class="field">
+          <label for="customer_name">{{ t('customer_name_label') }}</label>
+          <input type="text" id="customer_name" name="customer_name" value="{{ order.customer_name or '' }}" placeholder="{{ t('customer_name_ph') }}" style="width:200px">
+        </div>
+        <div class="field">
+          <label for="customer_phone">{{ t('customer_phone_label') }}</label>
+          <input type="text" id="customer_phone" name="customer_phone" value="{{ order.customer_phone or '' }}" placeholder="{{ t('customer_phone_ph') }}" style="width:160px">
+        </div>
+        <div class="field">
+          <label for="customer_address">{{ t('customer_address_label') }}</label>
+          <input type="text" id="customer_address" name="customer_address" value="{{ order.customer_address or '' }}" placeholder="{{ t('customer_address_ph') }}" style="width:200px">
+        </div>
+        <div class="field">
+          <label for="note">{{ t('order_note_label') }}</label>
+          <input type="text" id="note" name="note" value="{{ order.note or '' }}" placeholder="{{ t('order_note_ph') }}" style="width:200px">
+        </div>
+      </div>
+
+      <div id="order-lines">
+        {% for it in items %}
+        <div class="order-line form-row">
+          <div class="field">
+            <label>{{ t('product_col') }}</label>
+            <select name="product_id[]" required>
+              <option value="" disabled>{{ t('choose') }}</option>
+              {% for p in products %}
+              <option value="{{ p.id }}" {{ 'selected' if p.id == it.product_id }}>{{ p.name }} (${{ '%.2f'|format(p.price) }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label>{{ t('qty_col') }}</label>
+            <input type="number" name="quantity[]" min="1" value="{{ it.quantity }}" style="width:80px" required>
+          </div>
+          <button type="button" class="secondary remove-line-btn">{{ t('remove_line_btn') }}</button>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="form-row" style="margin-top:10px;">
+        <button type="button" id="add-line-btn" class="secondary">{{ t('add_line_btn') }}</button>
+      </div>
+
+      <div class="form-row" style="margin-top:16px;">
+        <button type="submit">{{ t('update_order_btn') }}</button>
+      </div>
+    </form>
+
+    <template id="order-line-template">
+      <div class="order-line form-row">
+        <div class="field">
+          <label>{{ t('product_col') }}</label>
+          <select name="product_id[]" required>
+            <option value="" disabled selected>{{ t('choose') }}</option>
+            {% for p in products %}
+            <option value="{{ p.id }}">{{ p.name }} (${{ '%.2f'|format(p.price) }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>{{ t('qty_col') }}</label>
+          <input type="number" name="quantity[]" min="1" value="1" style="width:80px" required>
+        </div>
+        <button type="button" class="secondary remove-line-btn">{{ t('remove_line_btn') }}</button>
+      </div>
+    </template>
+
+    <script>
+      (function () {
+        const linesWrap = document.getElementById('order-lines');
+        const template = document.getElementById('order-line-template');
+        const addBtn = document.getElementById('add-line-btn');
+
+        function refreshRemoveButtons() {
+          const lines = linesWrap.querySelectorAll('.order-line');
+          lines.forEach((line) => {
+            const btn = line.querySelector('.remove-line-btn');
+            btn.style.visibility = lines.length > 1 ? 'visible' : 'hidden';
+          });
+        }
+
+        addBtn.addEventListener('click', function () {
+          const clone = template.content.cloneNode(true);
+          linesWrap.appendChild(clone);
+          refreshRemoveButtons();
+        });
+
+        linesWrap.addEventListener('click', function (e) {
+          if (e.target.classList.contains('remove-line-btn')) {
+            e.target.closest('.order-line').remove();
+            refreshRemoveButtons();
+          }
+        });
+
+        refreshRemoveButtons();
+      })();
+    </script>
+    {% else %}
+    <div class="empty-state">{{ t('no_products_warning') }}</div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

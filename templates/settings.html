@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ t('settings_title') }} — {{ t('app_name') }}{% endblock %}
+{% block content %}
+
+<div class="page-title">
+  <div>
+    <h1>{{ t('settings_title') }}</h1>
+    <p>{{ t('settings_sub') }}</p>
+  </div>
+</div>
+
+<div class="section">
+  <div class="card">
+    <h3>{{ t('qr_upload_title') }}</h3>
+    <p class="field-hint" style="margin-bottom:14px;">{{ t('qr_upload_hint') }}</p>
+
+    {% if qr_filename %}
+    <div class="qr-preview-wrap">
+      <div>
+        <div class="invoice-field-label" style="margin-bottom:6px;">{{ t('qr_current_label') }}</div>
+        <img src="{{ url_for('payment_qr_image') }}" alt="Payment QR" class="qr-preview-img">
+      </div>
+      <form method="POST" action="{{ url_for('delete_qr') }}" onsubmit="return confirm('{{ t('confirm_delete_qr') }}');">
+        <button type="submit" class="danger-btn">{{ t('qr_delete_btn') }}</button>
+      </form>
+    </div>
+    {% else %}
+    <div class="empty-state" style="margin-bottom:16px;">{{ t('qr_no_current') }}</div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('upload_qr') }}" enctype="multipart/form-data" class="form-row">
+      <div class="field">
+        <input type="file" name="qr_image" accept=".png,.jpg,.jpeg,.webp" required>
+      </div>
+      <button type="submit">{{ t('qr_upload_btn') }}</button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

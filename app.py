@@ -1,0 +1,1172 @@
+import os
+import json
+import base64
+import urllib.request
+import urllib.error
+from datetime import datetime, timedelta
+from functools import wraps
+
+import psycopg2
+import psycopg2.extras
+import requests
+from flask import Flask, render_template, request, redirect, url_for, session, g, flash, jsonify, send_file
+from werkzeug.utils import secure_filename
+
+from translations import get_translator, DEFAULT_LANG
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SCHEMA_PATH = os.path.join(BASE_DIR, "schema.sql")
+
+# Postgres connection string (Supabase: Project Settings > Database >
+# Connection string > URI). Required.
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+# Supabase project URL + anon key (Project Settings > API). Required for
+# login — this app uses Supabase Auth for individual accounts.
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key-in-production")
+
+# Shown on invoices. Set these in your hosting provider's environment settings.
+SHOP_NAME = os.environ.get("SHOP_NAME", "ពងទាប្រៃបេកខេរី")
+SHOP_PHONE = os.environ.get("SHOP_PHONE", "")
+
+# Used to show cost in both USD and Riel. Update if the rate changes a lot.
+KHR_PER_USD = float(os.environ.get("KHR_PER_USD", "4100"))
+
+# Optional: set these to enable the "Send to shop Telegram" button on
+# invoices. See README.md for how to create a bot and find a chat ID.
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+
+# ---------- Database helpers (Postgres / Supabase) ----------
+#
+# get_db() returns a thin wrapper so the rest of the app can keep using the
+# same db.execute(query, params).fetchone()/.fetchall() style as before —
+# only the placeholder syntax (? -> %s) and a couple of Postgres-specific
+# behaviors (transaction rollback on error, no lastrowid) needed handling.
+
+class PGConnection:
+    def __init__(self, conn):
+        self._conn = conn
+
+    def execute(self, query, params=()):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        pg_query = query.replace("?", "%s")
+        try:
+            cur.execute(pg_query, params)
+        except psycopg2.Error:
+            # Postgres aborts the whole transaction on error until rolled
+            # back (unlike SQLite) — without this, every later query on
+            # this connection would fail with "current transaction is
+            # aborted" even after the caller catches the exception.
+            self._conn.rollback()
+            raise
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+
+def get_db():
+    if "db" not in g:
+        conn = psycopg2.connect(DATABASE_URL)
+        g.db = PGConnection(conn)
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(exception=None):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def init_db():
+    """Creates tables if they don't exist yet. Safe to run every startup."""
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+    with open(SCHEMA_PATH) as f:
+        cur.execute(f.read())
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def migrate_db():
+    """Add columns introduced after the initial release, for anyone
+    upgrading an existing database without losing data. Safe to call every
+    startup — each check is a no-op if the column already exists."""
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+    def column_exists(table, column):
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_name=%s AND column_name=%s",
+            (table, column),
+        )
+        return cur.fetchone() is not None
+
+    if not column_exists("orders", "customer_phone"):
+        cur.execute("ALTER TABLE orders ADD COLUMN customer_phone TEXT")
+    if not column_exists("orders", "customer_address"):
+        cur.execute("ALTER TABLE orders ADD COLUMN customer_address TEXT")
+    if not column_exists("orders", "created_by_email"):
+        cur.execute("ALTER TABLE orders ADD COLUMN created_by_email TEXT")
+    if not column_exists("materials", "supplier_name"):
+        cur.execute("ALTER TABLE materials ADD COLUMN supplier_name TEXT")
+    if not column_exists("materials", "supplier_contact"):
+        cur.execute("ALTER TABLE materials ADD COLUMN supplier_contact TEXT")
+    if not column_exists("materials", "notes"):
+        cur.execute("ALTER TABLE materials ADD COLUMN notes TEXT")
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def usd_to_riel(usd):
+    return usd * KHR_PER_USD
+
+
+def riel_to_usd(riel):
+    return riel / KHR_PER_USD if KHR_PER_USD else 0
+
+
+QR_MIMETYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
+
+
+def get_qr_data():
+    """Returns (image_bytes, mimetype) for the stored payment QR, or None.
+    Stored in the database (not local disk) so it survives redeploys on
+    hosting providers with no persistent disk, like Render's free tier."""
+    db = get_db()
+    row = db.execute("SELECT value FROM app_settings WHERE key = 'payment_qr'").fetchone()
+    if not row or not row["value"]:
+        return None
+    try:
+        payload = json.loads(row["value"])
+        return base64.b64decode(payload["data"]), payload["mimetype"]
+    except (ValueError, KeyError):
+        return None
+
+
+def save_qr_upload(file_storage):
+    """Saves an uploaded QR code image into the database, replacing any
+    previous one."""
+    filename = secure_filename(file_storage.filename or "")
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in QR_MIMETYPES:
+        return False
+
+    image_bytes = file_storage.read()
+    payload = json.dumps({
+        "data": base64.b64encode(image_bytes).decode("ascii"),
+        "mimetype": QR_MIMETYPES[ext],
+    })
+    db = get_db()
+    db.execute(
+        "INSERT INTO app_settings (key, value) VALUES ('payment_qr', ?) "
+        "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        (payload,),
+    )
+    db.commit()
+    return True
+
+
+def clear_qr_upload():
+    db = get_db()
+    db.execute("DELETE FROM app_settings WHERE key = 'payment_qr'")
+    db.commit()
+
+
+def send_telegram_message(chat_id, text):
+    """Sends a plain-text message via the Telegram Bot API using only the
+    standard library (no extra dependency needed). Returns (ok, error_msg)."""
+    if not TELEGRAM_BOT_TOKEN:
+        return False, "not_configured"
+    if not chat_id:
+        return False, "no_chat_id"
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = json.dumps({"chat_id": chat_id, "text": text}).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+            if body.get("ok"):
+                return True, None
+            return False, body.get("description", "unknown_error")
+    except urllib.error.URLError as e:
+        return False, str(e)
+
+
+def send_telegram_photo(chat_id, image_bytes, caption=""):
+    """Sends a PNG image via the Telegram Bot API sendPhoto endpoint, using a
+    hand-built multipart/form-data body so no extra dependency is needed.
+    Returns (ok, error_msg)."""
+    if not TELEGRAM_BOT_TOKEN:
+        return False, "not_configured"
+    if not chat_id:
+        return False, "no_chat_id"
+
+    boundary = "----BakeryTrackerBoundary7f3a9c"
+    body = bytearray()
+
+    def add_field(name, value):
+        body.extend(f"--{boundary}\r\n".encode())
+        body.extend(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+        body.extend(f"{value}\r\n".encode())
+
+    add_field("chat_id", chat_id)
+    if caption:
+        add_field("caption", caption[:1024])  # Telegram caption length limit
+
+    body.extend(f"--{boundary}\r\n".encode())
+    body.extend(b'Content-Disposition: form-data; name="photo"; filename="invoice.png"\r\n')
+    body.extend(b"Content-Type: image/png\r\n\r\n")
+    body.extend(image_bytes)
+    body.extend(f"\r\n--{boundary}--\r\n".encode())
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    req = urllib.request.Request(
+        url,
+        data=bytes(body),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            if result.get("ok"):
+                return True, None
+            return False, result.get("description", "unknown_error")
+    except urllib.error.URLError as e:
+        return False, str(e)
+
+
+def build_invoice_text(t, order, items):
+    """Plain-text invoice used for Telegram, Share, and Copy."""
+    ordered_at_str = order["ordered_at"].strftime("%Y-%m-%d %H:%M") if order["ordered_at"] else ""
+    lines = [
+        f"🍞 {SHOP_NAME}",
+        f"{t('invoice_title_km')} / {t('invoice_title_en')}",
+        f"{t('invoice_no_label')}: #{order['id']}",
+        f"{t('invoice_date_label')}: {ordered_at_str}",
+    ]
+    if order["customer_name"]:
+        lines.append(f"{t('buyer_name_label')}: {order['customer_name']}")
+    if order["customer_phone"]:
+        lines.append(f"{t('buyer_tel_label')}: {order['customer_phone']}")
+    if order["customer_address"]:
+        lines.append(f"{t('buyer_address_label')}: {order['customer_address']}")
+    lines.append("")
+    for idx, it in enumerate(items, start=1):
+        lines.append(f"{idx}. {it['product_name']} x{it['quantity']} @ ${it['unit_price']:.2f} = ${it['line_total']:.2f}")
+    lines.append("")
+    lines.append(f"{t('invoice_total_label')}: ${order['total_amount']:.2f}")
+    if order["note"]:
+        lines.append(f"({order['note']})")
+    lines.append("")
+    lines.append(t("thank_you_msg"))
+    if SHOP_PHONE:
+        lines.append(SHOP_PHONE)
+    return "\n".join(lines)
+
+
+# ---------- Language ----------
+
+@app.before_request
+def set_language():
+    if "lang" not in session:
+        session["lang"] = DEFAULT_LANG
+    g.t = get_translator(session["lang"])
+
+
+@app.context_processor
+def inject_translator():
+    return {"t": g.t, "current_lang": session.get("lang", DEFAULT_LANG)}
+
+
+@app.route("/lang/<code>")
+def set_lang(code):
+    if code in ("km", "en"):
+        session["lang"] = code
+    return redirect(request.referrer or url_for("dashboard"))
+
+
+# ---------- Auth (Supabase Auth — individual accounts) ----------
+#
+# Create your accounts once in the Supabase dashboard: Authentication >
+# Users > Add user (turn off "auto confirm" only if you want an email
+# confirmation step; for a private 2-person tool, auto-confirmed is fine).
+# There's no public sign-up page in this app on purpose — accounts are
+# created by whoever administers the Supabase project, not by visitors.
+
+def supabase_auth_request(path, payload):
+    """POSTs to Supabase's Auth (GoTrue) REST API. Returns (ok, data)."""
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        return False, {"error": "not_configured"}
+    try:
+        resp = requests.post(
+            f"{SUPABASE_URL}/auth/v1{path}",
+            json=payload,
+            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            timeout=10,
+        )
+        data = resp.json()
+        return resp.status_code == 200, data
+    except requests.RequestException as e:
+        return False, {"error": str(e)}
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user_email"):
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+
+        if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+            flash(g.t("auth_not_configured"), "error")
+            return render_template("login.html")
+
+        ok, data = supabase_auth_request(
+            "/token?grant_type=password", {"email": email, "password": password}
+        )
+        if ok and data.get("access_token"):
+            session["user_email"] = data.get("user", {}).get("email", email)
+            session["access_token"] = data["access_token"]
+            nxt = request.args.get("next") or url_for("dashboard")
+            return redirect(nxt)
+        flash(g.t("login_wrong"), "error")
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    lang = session.get("lang", DEFAULT_LANG)
+    session.clear()
+    session["lang"] = lang
+    return redirect(url_for("login"))
+
+
+# ---------- Dashboard ----------
+
+@app.route("/")
+@login_required
+def dashboard():
+    db = get_db()
+
+    low_stock = db.execute(
+        "SELECT * FROM materials WHERE stock_qty <= 0 ORDER BY stock_qty ASC"
+    ).fetchall()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_orders = db.execute(
+        "SELECT COALESCE(SUM(total_amount), 0) as total, "
+        "COALESCE((SELECT SUM(quantity) FROM order_items JOIN orders o ON o.id = order_items.order_id WHERE date(o.ordered_at) = ?), 0) as units "
+        "FROM orders WHERE date(ordered_at) = ?",
+        (today, today),
+    ).fetchone()
+
+    week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    week_orders = db.execute(
+        "SELECT COALESCE(SUM(total_amount), 0) as total FROM orders WHERE date(ordered_at) >= ?",
+        (week_ago,),
+    ).fetchone()
+
+    material_count = db.execute("SELECT COUNT(*) as c FROM materials").fetchone()["c"]
+    product_count = db.execute("SELECT COUNT(*) as c FROM products WHERE active = 1").fetchone()["c"]
+
+    recent_orders = db.execute(
+        "SELECT * FROM orders ORDER BY ordered_at DESC LIMIT 6"
+    ).fetchall()
+
+    # Filterable chart: orders total per day, over the selected window.
+    chart_days = int(request.args.get("chart_days", 7))
+    chart_since = (datetime.now() - timedelta(days=chart_days)).strftime("%Y-%m-%d")
+    chart_data = db.execute(
+        "SELECT date(ordered_at) as day, SUM(total_amount) as total, COUNT(*) as order_count "
+        "FROM orders WHERE date(ordered_at) >= ? GROUP BY day ORDER BY day ASC",
+        (chart_since,),
+    ).fetchall()
+
+    return render_template(
+        "dashboard.html",
+        low_stock=low_stock,
+        today_total=today_orders["total"],
+        today_units=today_orders["units"],
+        week_total=week_orders["total"],
+        material_count=material_count,
+        product_count=product_count,
+        recent_orders=recent_orders,
+        chart_days=chart_days,
+        chart_data=chart_data,
+    )
+
+
+# ---------- Materials ----------
+
+@app.route("/materials")
+@login_required
+def materials():
+    db = get_db()
+    rows = db.execute("SELECT * FROM materials ORDER BY name ASC").fetchall()
+    history_by_material = {}
+    for m in rows:
+        history_by_material[m["id"]] = db.execute(
+            "SELECT * FROM stock_transactions WHERE material_id = ? ORDER BY created_at DESC LIMIT 10",
+            (m["id"],),
+        ).fetchall()
+    return render_template(
+        "materials.html", materials=rows, khr_per_usd=KHR_PER_USD, history_by_material=history_by_material
+    )
+
+
+@app.route("/materials/add", methods=["POST"])
+@login_required
+def add_material():
+    db = get_db()
+    name = request.form.get("name", "").strip()
+    unit = request.form.get("unit", "").strip()
+    stock_qty = float(request.form.get("stock_qty") or 0)
+    total_cost_usd_raw = request.form.get("total_cost_usd", "").strip()
+    total_cost_riel_raw = request.form.get("total_cost_riel", "").strip()
+
+    if not name or not unit:
+        flash(g.t("flash_name_unit_required"), "error")
+        return redirect(url_for("materials"))
+
+    # The person tells us what they bought and what they paid in total —
+    # e.g. "10kg of flour for $12" — and we work out cost-per-unit
+    # ourselves, rather than asking them to do that division.
+    total_cost = None
+    if total_cost_usd_raw:
+        total_cost = float(total_cost_usd_raw)
+    elif total_cost_riel_raw:
+        total_cost = riel_to_usd(float(total_cost_riel_raw))
+
+    if total_cost is not None and stock_qty > 0:
+        cost_per_unit = total_cost / stock_qty
+    else:
+        cost_per_unit = 0.0
+
+    try:
+        db.execute(
+            "INSERT INTO materials (name, unit, stock_qty, cost_per_unit, reorder_threshold) "
+            "VALUES (?, ?, ?, ?, 0)",
+            (name, unit, stock_qty, cost_per_unit),
+        )
+        db.commit()
+        if stock_qty > 0:
+            mat_id = db.execute("SELECT id FROM materials WHERE name = ?", (name,)).fetchone()["id"]
+            note = request.form.get("note", "").strip() or "Initial stock"
+            db.execute(
+                "INSERT INTO stock_transactions (material_id, change_qty, reason, note) VALUES (?, ?, 'restock', ?)",
+                (mat_id, stock_qty, note),
+            )
+            db.commit()
+        flash(g.t("flash_material_added", name=name), "success")
+    except psycopg2.IntegrityError:
+        flash(g.t("flash_material_exists", name=name), "error")
+
+    return redirect(url_for("materials"))
+
+
+@app.route("/materials/<int:material_id>/edit", methods=["POST"])
+@login_required
+def edit_material(material_id):
+    db = get_db()
+    name = request.form.get("name", "").strip()
+    unit = request.form.get("unit", "").strip()
+    cost_usd_raw = request.form.get("cost_per_unit_usd", "").strip()
+    cost_riel_raw = request.form.get("cost_per_unit_riel", "").strip()
+    supplier_name = request.form.get("supplier_name", "").strip()
+    supplier_contact = request.form.get("supplier_contact", "").strip()
+    notes = request.form.get("notes", "").strip()
+
+    if not name or not unit:
+        flash(g.t("flash_name_unit_required"), "error")
+        return redirect(url_for("materials"))
+
+    if cost_usd_raw:
+        cost_per_unit = float(cost_usd_raw)
+    elif cost_riel_raw:
+        cost_per_unit = riel_to_usd(float(cost_riel_raw))
+    else:
+        existing = db.execute("SELECT cost_per_unit FROM materials WHERE id = ?", (material_id,)).fetchone()
+        cost_per_unit = existing["cost_per_unit"] if existing else 0.0
+
+    try:
+        db.execute(
+            "UPDATE materials SET name=?, unit=?, cost_per_unit=?, supplier_name=?, supplier_contact=?, notes=? "
+            "WHERE id=?",
+            (name, unit, cost_per_unit, supplier_name or None, supplier_contact or None, notes or None, material_id),
+        )
+        db.commit()
+        flash(g.t("flash_material_updated"), "success")
+    except psycopg2.IntegrityError:
+        flash(g.t("flash_material_exists", name=name), "error")
+
+    return redirect(url_for("materials"))
+
+
+@app.route("/materials/<int:material_id>/restock", methods=["POST"])
+@login_required
+def restock_material(material_id):
+    db = get_db()
+    qty = float(request.form.get("qty") or 0)
+    note = request.form.get("note", "").strip()
+    total_cost_usd_raw = request.form.get("total_cost_usd", "").strip()
+    total_cost_riel_raw = request.form.get("total_cost_riel", "").strip()
+
+    if qty == 0:
+        flash(g.t("flash_qty_nonzero"), "error")
+        return redirect(url_for("materials"))
+
+    total_cost = None
+    if total_cost_usd_raw:
+        total_cost = float(total_cost_usd_raw)
+    elif total_cost_riel_raw:
+        total_cost = riel_to_usd(float(total_cost_riel_raw))
+
+    # If a total cost was given for this restock (only makes sense for an
+    # actual restock, not a negative adjustment), recompute cost_per_unit as
+    # a weighted average across old stock + new stock, so prices update
+    # realistically as ingredient costs change over time.
+    if total_cost is not None and qty > 0:
+        material = db.execute("SELECT * FROM materials WHERE id = ?", (material_id,)).fetchone()
+        old_stock = material["stock_qty"]
+        old_cost_per_unit = material["cost_per_unit"]
+        new_batch_cost_per_unit = total_cost / qty
+        new_total_qty = old_stock + qty
+        if new_total_qty > 0:
+            weighted_cost = ((old_stock * old_cost_per_unit) + (qty * new_batch_cost_per_unit)) / new_total_qty
+        else:
+            weighted_cost = new_batch_cost_per_unit
+        db.execute(
+            "UPDATE materials SET stock_qty = stock_qty + ?, cost_per_unit = ? WHERE id = ?",
+            (qty, weighted_cost, material_id),
+        )
+    else:
+        db.execute("UPDATE materials SET stock_qty = stock_qty + ? WHERE id = ?", (qty, material_id))
+
+    reason = "restock" if qty > 0 else "adjustment"
+    db.execute(
+        "INSERT INTO stock_transactions (material_id, change_qty, reason, note) VALUES (?, ?, ?, ?)",
+        (material_id, qty, reason, note or None),
+    )
+    db.commit()
+    flash(g.t("flash_stock_updated"), "success")
+    return redirect(url_for("materials"))
+
+
+@app.route("/materials/<int:material_id>/delete", methods=["POST"])
+@login_required
+def delete_material(material_id):
+    db = get_db()
+    in_use = db.execute(
+        "SELECT COUNT(*) as c FROM product_ingredients WHERE material_id = ?", (material_id,)
+    ).fetchone()["c"]
+    if in_use:
+        flash(g.t("flash_material_in_use"), "error")
+        return redirect(url_for("materials"))
+    db.execute("DELETE FROM stock_transactions WHERE material_id = ?", (material_id,))
+    db.execute("DELETE FROM materials WHERE id = ?", (material_id,))
+    db.commit()
+    flash(g.t("flash_material_deleted"), "success")
+    return redirect(url_for("materials"))
+
+
+# ---------- Products & recipes (yield-based) ----------
+
+@app.route("/products")
+@login_required
+def products():
+    db = get_db()
+    rows = db.execute("SELECT * FROM products ORDER BY name ASC").fetchall()
+    all_materials = db.execute("SELECT * FROM materials ORDER BY name ASC").fetchall()
+
+    products_with_recipes = []
+    for p in rows:
+        recipe = db.execute(
+            "SELECT product_ingredients.*, materials.name as material_name, materials.unit "
+            "FROM product_ingredients JOIN materials ON materials.id = product_ingredients.material_id "
+            "WHERE product_id = ?",
+            (p["id"],),
+        ).fetchall()
+        cost_per_unit = sum(r["quantity_per_unit"] * db.execute(
+            "SELECT cost_per_unit FROM materials WHERE id = ?", (r["material_id"],)
+        ).fetchone()["cost_per_unit"] for r in recipe)
+        products_with_recipes.append({
+            "product": p,
+            "recipe": recipe,
+            "cost_per_unit": cost_per_unit,
+            "margin": p["price"] - cost_per_unit,
+        })
+
+    return render_template("products.html", products=products_with_recipes, all_materials=all_materials, khr_per_usd=KHR_PER_USD)
+
+
+@app.route("/products/add", methods=["POST"])
+@login_required
+def add_product():
+    db = get_db()
+    name = request.form.get("name", "").strip()
+    price_usd_raw = request.form.get("price_usd", "").strip()
+    price_riel_raw = request.form.get("price_riel", "").strip()
+
+    if not name:
+        flash(g.t("flash_product_name_required"), "error")
+        return redirect(url_for("products"))
+
+    if price_usd_raw:
+        price = float(price_usd_raw)
+    elif price_riel_raw:
+        price = riel_to_usd(float(price_riel_raw))
+    else:
+        price = 0.0
+
+    try:
+        db.execute("INSERT INTO products (name, price) VALUES (?, ?)", (name, price))
+        db.commit()
+        flash(g.t("flash_product_added", name=name), "success")
+    except psycopg2.IntegrityError:
+        flash(g.t("flash_product_exists", name=name), "error")
+
+    return redirect(url_for("products"))
+
+
+@app.route("/products/<int:product_id>/recipe/add", methods=["POST"])
+@login_required
+def add_recipe_ingredient(product_id):
+    db = get_db()
+    material_id = request.form.get("material_id")
+    batch_qty = float(request.form.get("batch_qty") or 0)
+    yield_count = float(request.form.get("yield_count") or 0)
+
+    if not material_id or batch_qty <= 0 or yield_count <= 0:
+        flash(g.t("flash_recipe_invalid"), "error")
+        return redirect(url_for("products"))
+
+    quantity_per_unit = batch_qty / yield_count
+
+    existing = db.execute(
+        "SELECT id FROM product_ingredients WHERE product_id = ? AND material_id = ?",
+        (product_id, material_id),
+    ).fetchone()
+    if existing:
+        db.execute(
+            "UPDATE product_ingredients SET batch_qty = ?, yield_count = ?, quantity_per_unit = ? WHERE id = ?",
+            (batch_qty, yield_count, quantity_per_unit, existing["id"]),
+        )
+    else:
+        db.execute(
+            "INSERT INTO product_ingredients (product_id, material_id, batch_qty, yield_count, quantity_per_unit) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (product_id, material_id, batch_qty, yield_count, quantity_per_unit),
+        )
+    db.commit()
+    flash(g.t("flash_recipe_updated"), "success")
+    return redirect(url_for("products"))
+
+
+@app.route("/products/recipe/<int:ingredient_id>/remove", methods=["POST"])
+@login_required
+def remove_recipe_ingredient(ingredient_id):
+    db = get_db()
+    db.execute("DELETE FROM product_ingredients WHERE id = ?", (ingredient_id,))
+    db.commit()
+    flash(g.t("flash_ingredient_removed"), "success")
+    return redirect(url_for("products"))
+
+
+@app.route("/products/<int:product_id>/delete", methods=["POST"])
+@login_required
+def delete_product(product_id):
+    db = get_db()
+    in_use = db.execute(
+        "SELECT COUNT(*) as c FROM order_items WHERE product_id = ?", (product_id,)
+    ).fetchone()["c"]
+    if in_use:
+        db.execute("UPDATE products SET active = 0 WHERE id = ?", (product_id,))
+        db.commit()
+        flash(g.t("flash_product_archived"), "success")
+    else:
+        db.execute("DELETE FROM product_ingredients WHERE product_id = ?", (product_id,))
+        db.execute("DELETE FROM products WHERE id = ?", (product_id,))
+        db.commit()
+        flash(g.t("flash_product_deleted"), "success")
+    return redirect(url_for("products"))
+
+
+# ---------- Orders (customer orders, multi-item, real-time stock deduction) ----------
+
+@app.route("/orders")
+@login_required
+def orders():
+    db = get_db()
+    active_products = db.execute(
+        "SELECT * FROM products WHERE active = 1 ORDER BY name ASC"
+    ).fetchall()
+
+    recent = db.execute(
+        "SELECT * FROM orders ORDER BY ordered_at DESC LIMIT 30"
+    ).fetchall()
+
+    order_summaries = []
+    for o in recent:
+        items = db.execute(
+            "SELECT order_items.*, products.name as product_name FROM order_items "
+            "JOIN products ON products.id = order_items.product_id WHERE order_id = ?",
+            (o["id"],),
+        ).fetchall()
+        items_text = ", ".join(f'{it["product_name"]} x{it["quantity"]}' for it in items)
+        order_summaries.append({"order": o, "items_text": items_text})
+
+    return render_template("orders.html", products=active_products, orders=order_summaries)
+
+
+def parse_order_form_lines(form):
+    """Reads product_id[]/quantity[] pairs from a submitted order form."""
+    product_ids = form.getlist("product_id[]")
+    quantities = form.getlist("quantity[]")
+    lines = []
+    for pid, qty_raw in zip(product_ids, quantities):
+        if not pid or not qty_raw:
+            continue
+        try:
+            qty = int(qty_raw)
+        except ValueError:
+            continue
+        if qty <= 0:
+            continue
+        lines.append((int(pid), qty))
+    return lines
+
+
+def compute_order_lines(db, lines):
+    """Given [(product_id, qty), ...], returns (line_details, material_needed)
+    where material_needed aggregates quantity needed per material_id across
+    all lines (so two products sharing an ingredient are handled correctly)."""
+    material_needed = {}
+    line_details = []
+    for product_id, qty in lines:
+        product = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+        if not product:
+            continue
+        recipe = db.execute(
+            "SELECT * FROM product_ingredients WHERE product_id = ?", (product_id,)
+        ).fetchall()
+        line_cost = 0.0
+        for ing in recipe:
+            needed = ing["quantity_per_unit"] * qty
+            material_needed[ing["material_id"]] = material_needed.get(ing["material_id"], 0) + needed
+            mat = db.execute("SELECT cost_per_unit FROM materials WHERE id = ?", (ing["material_id"],)).fetchone()
+            line_cost += needed * (mat["cost_per_unit"] if mat else 0)
+        line_total = product["price"] * qty
+        line_details.append({
+            "product": product, "qty": qty, "recipe": recipe,
+            "line_total": line_total, "line_cost": line_cost,
+        })
+    return line_details, material_needed
+
+
+def find_stock_shortages(db, material_needed):
+    shortages = []
+    for material_id, needed in material_needed.items():
+        mat = db.execute("SELECT * FROM materials WHERE id = ?", (material_id,)).fetchone()
+        if mat and mat["stock_qty"] < needed:
+            shortages.append(f'{mat["name"]} ({needed:g}{mat["unit"]} / {mat["stock_qty"]:g}{mat["unit"]})')
+    return shortages
+
+
+def restore_order_stock(db, order_id):
+    """Reverses the stock deduction of an existing order's items, using each
+    product's current recipe. Used before re-applying an edited order."""
+    items = db.execute("SELECT * FROM order_items WHERE order_id = ?", (order_id,)).fetchall()
+    for it in items:
+        recipe = db.execute(
+            "SELECT * FROM product_ingredients WHERE product_id = ?", (it["product_id"],)
+        ).fetchall()
+        for ing in recipe:
+            restored = ing["quantity_per_unit"] * it["quantity"]
+            db.execute("UPDATE materials SET stock_qty = stock_qty + ? WHERE id = ?", (restored, ing["material_id"]))
+            db.execute(
+                "INSERT INTO stock_transactions (material_id, change_qty, reason, note) VALUES (?, ?, 'adjustment', ?)",
+                (ing["material_id"], restored, f"Reversed for order #{order_id} edit"),
+            )
+
+
+@app.route("/orders/add", methods=["POST"])
+@login_required
+def add_order():
+    db = get_db()
+    customer_name = request.form.get("customer_name", "").strip()
+    customer_phone = request.form.get("customer_phone", "").strip()
+    customer_address = request.form.get("customer_address", "").strip()
+    note = request.form.get("note", "").strip()
+    lines = parse_order_form_lines(request.form)
+
+    if not lines:
+        flash(g.t("order_no_items"), "error")
+        return redirect(url_for("orders"))
+
+    line_details, material_needed = compute_order_lines(db, lines)
+    shortages = find_stock_shortages(db, material_needed)
+
+    if shortages:
+        flash(g.t("order_shortage", details="; ".join(shortages)), "error")
+        return redirect(url_for("orders"))
+
+    total_amount = sum(ld["line_total"] for ld in line_details)
+    total_cost = sum(ld["line_cost"] for ld in line_details)
+    total_profit = total_amount - total_cost
+
+    cursor = db.execute(
+        "INSERT INTO orders (customer_name, customer_phone, customer_address, note, total_amount, total_cost, total_profit, created_by_email) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        (customer_name or None, customer_phone or None, customer_address or None, note or None, total_amount, total_cost, total_profit, session.get("user_email")),
+    )
+    order_id = cursor.fetchone()["id"]
+
+    for ld in line_details:
+        db.execute(
+            "INSERT INTO order_items (order_id, product_id, quantity, unit_price, line_total, line_cost) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (order_id, ld["product"]["id"], ld["qty"], ld["product"]["price"], ld["line_total"], ld["line_cost"]),
+        )
+        for ing in ld["recipe"]:
+            needed = ing["quantity_per_unit"] * ld["qty"]
+            db.execute("UPDATE materials SET stock_qty = stock_qty - ? WHERE id = ?", (needed, ing["material_id"]))
+            db.execute(
+                "INSERT INTO stock_transactions (material_id, change_qty, reason, note) VALUES (?, ?, 'used_in_order', ?)",
+                (ing["material_id"], -needed, f'{ld["product"]["name"]} x{ld["qty"]}'),
+            )
+
+    db.commit()
+    flash(
+        g.t(
+            "order_success",
+            customer=customer_name or g.t("walk_in_customer"),
+            total=f"{total_amount:,.2f}",
+            profit=f"{total_profit:,.2f}",
+        ),
+        "success",
+    )
+    return redirect(url_for("orders"))
+
+
+@app.route("/orders/<int:order_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_order(order_id):
+    db = get_db()
+    order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if not order:
+        return redirect(url_for("orders"))
+
+    if request.method == "GET":
+        active_products = db.execute(
+            "SELECT * FROM products WHERE active = 1 ORDER BY name ASC"
+        ).fetchall()
+        items = db.execute(
+            "SELECT order_items.*, products.name as product_name FROM order_items "
+            "JOIN products ON products.id = order_items.product_id WHERE order_id = ?",
+            (order_id,),
+        ).fetchall()
+        return render_template("edit_order.html", order=order, items=items, products=active_products)
+
+    # POST: apply the edit
+    customer_name = request.form.get("customer_name", "").strip()
+    customer_phone = request.form.get("customer_phone", "").strip()
+    customer_address = request.form.get("customer_address", "").strip()
+    note = request.form.get("note", "").strip()
+    lines = parse_order_form_lines(request.form)
+
+    if not lines:
+        flash(g.t("order_no_items"), "error")
+        return redirect(url_for("edit_order", order_id=order_id))
+
+    # Undo the original stock deduction first (not committed yet), then
+    # validate the new lines against that restored stock. If anything is
+    # short, we roll back so the restore itself never takes effect.
+    restore_order_stock(db, order_id)
+    line_details, material_needed = compute_order_lines(db, lines)
+    shortages = find_stock_shortages(db, material_needed)
+
+    if shortages:
+        db.rollback()
+        flash(g.t("order_shortage", details="; ".join(shortages)), "error")
+        return redirect(url_for("edit_order", order_id=order_id))
+
+    total_amount = sum(ld["line_total"] for ld in line_details)
+    total_cost = sum(ld["line_cost"] for ld in line_details)
+    total_profit = total_amount - total_cost
+
+    db.execute("DELETE FROM order_items WHERE order_id = ?", (order_id,))
+    db.execute(
+        "UPDATE orders SET customer_name=?, customer_phone=?, customer_address=?, note=?, "
+        "total_amount=?, total_cost=?, total_profit=? WHERE id=?",
+        (customer_name or None, customer_phone or None, customer_address or None, note or None,
+         total_amount, total_cost, total_profit, order_id),
+    )
+
+    for ld in line_details:
+        db.execute(
+            "INSERT INTO order_items (order_id, product_id, quantity, unit_price, line_total, line_cost) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (order_id, ld["product"]["id"], ld["qty"], ld["product"]["price"], ld["line_total"], ld["line_cost"]),
+        )
+        for ing in ld["recipe"]:
+            needed = ing["quantity_per_unit"] * ld["qty"]
+            db.execute("UPDATE materials SET stock_qty = stock_qty - ? WHERE id = ?", (needed, ing["material_id"]))
+            db.execute(
+                "INSERT INTO stock_transactions (material_id, change_qty, reason, note) VALUES (?, ?, 'used_in_order', ?)",
+                (ing["material_id"], -needed, f'{ld["product"]["name"]} x{ld["qty"]} (edited)'),
+            )
+
+    db.commit()
+    flash(g.t("order_updated_success"), "success")
+    return redirect(url_for("order_invoice", order_id=order_id))
+
+
+@app.route("/orders/<int:order_id>/delete", methods=["POST"])
+@login_required
+def delete_order(order_id):
+    db = get_db()
+    db.execute("DELETE FROM order_items WHERE order_id = ?", (order_id,))
+    db.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+    db.commit()
+    flash(g.t("order_deleted"), "success")
+    return redirect(url_for("orders"))
+
+
+@app.route("/orders/<int:order_id>/invoice")
+@login_required
+def order_invoice(order_id):
+    db = get_db()
+    order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if not order:
+        return redirect(url_for("orders"))
+    items = db.execute(
+        "SELECT order_items.*, products.name as product_name FROM order_items "
+        "JOIN products ON products.id = order_items.product_id WHERE order_id = ?",
+        (order_id,),
+    ).fetchall()
+    invoice_text = build_invoice_text(g.t, order, items)
+    return render_template(
+        "invoice.html",
+        order=order,
+        items=items,
+        invoice_text=invoice_text,
+        shop_name=SHOP_NAME,
+        shop_phone=SHOP_PHONE,
+        khr_per_usd=KHR_PER_USD,
+        telegram_shop_enabled=bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID),
+        has_qr=bool(get_qr_data()),
+    )
+
+
+@app.route("/orders/<int:order_id>/send-telegram", methods=["POST"])
+@login_required
+def send_order_telegram(order_id):
+    db = get_db()
+    order = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if not order:
+        return redirect(url_for("orders"))
+    items = db.execute(
+        "SELECT order_items.*, products.name as product_name FROM order_items "
+        "JOIN products ON products.id = order_items.product_id WHERE order_id = ?",
+        (order_id,),
+    ).fetchall()
+    invoice_text = build_invoice_text(g.t, order, items)
+
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        flash(g.t("telegram_not_configured"), "error")
+        return redirect(url_for("order_invoice", order_id=order_id))
+
+    ok, err = send_telegram_message(TELEGRAM_CHAT_ID, invoice_text)
+    if ok:
+        flash(g.t("telegram_sent_success"), "success")
+    else:
+        flash(g.t("telegram_sent_failed"), "error")
+    return redirect(url_for("order_invoice", order_id=order_id))
+
+
+@app.route("/orders/<int:order_id>/send-telegram-image", methods=["POST"])
+@login_required
+def send_order_telegram_image(order_id):
+    """Receives a base64 PNG (captured client-side from the invoice card) and
+    forwards it to the shop's Telegram chat as a photo. Used by the invoice
+    page's 'Send image to shop Telegram' button."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return jsonify({"ok": False, "reason": "not_configured"}), 400
+
+    data = request.get_json(silent=True) or {}
+    image_data_url = data.get("image", "")
+    if "," not in image_data_url:
+        return jsonify({"ok": False, "reason": "bad_image"}), 400
+
+    try:
+        image_bytes = base64.b64decode(image_data_url.split(",", 1)[1])
+    except Exception:
+        return jsonify({"ok": False, "reason": "bad_image"}), 400
+
+    caption = f"{SHOP_NAME} — {g.t('invoice_title_km')} #{order_id}"
+    ok, err = send_telegram_photo(TELEGRAM_CHAT_ID, image_bytes, caption=caption)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "reason": err}), 502
+
+
+# ---------- Expenses ----------
+
+@app.route("/expenses/add", methods=["POST"])
+@login_required
+def add_expense():
+    db = get_db()
+    category = request.form.get("category", "").strip()
+    amount_usd_raw = request.form.get("amount_usd", "").strip()
+    amount_riel_raw = request.form.get("amount_riel", "").strip()
+    note = request.form.get("note", "").strip()
+
+    if amount_usd_raw:
+        amount = float(amount_usd_raw)
+    elif amount_riel_raw:
+        amount = riel_to_usd(float(amount_riel_raw))
+    else:
+        amount = 0.0
+
+    if not category or amount <= 0:
+        flash(g.t("flash_expense_invalid"), "error")
+        return redirect(url_for("reports"))
+
+    db.execute(
+        "INSERT INTO expenses (category, amount, note) VALUES (?, ?, ?)",
+        (category, amount, note or None),
+    )
+    db.commit()
+    flash(g.t("flash_expense_logged"), "success")
+    return redirect(url_for("reports"))
+
+
+# ---------- Reports ----------
+
+@app.route("/reports")
+@login_required
+def reports():
+    db = get_db()
+
+    days = int(request.args.get("days", 30))
+    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    daily_income = db.execute(
+        "SELECT date(ordered_at) as day, SUM(total_amount) as total "
+        "FROM orders WHERE date(ordered_at) >= ? GROUP BY day ORDER BY day ASC",
+        (since,),
+    ).fetchall()
+
+    by_product = db.execute(
+        "SELECT products.name, SUM(order_items.quantity) as units, SUM(order_items.line_total) as total "
+        "FROM order_items JOIN products ON products.id = order_items.product_id "
+        "JOIN orders ON orders.id = order_items.order_id "
+        "WHERE date(orders.ordered_at) >= ? GROUP BY products.id ORDER BY total DESC",
+        (since,),
+    ).fetchall()
+
+    totals = db.execute(
+        "SELECT COALESCE(SUM(total_amount),0) as income, COALESCE(SUM(total_cost),0) as cost "
+        "FROM orders WHERE date(ordered_at) >= ?",
+        (since,),
+    ).fetchone()
+
+    total_expenses = db.execute(
+        "SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE date(spent_at) >= ?", (since,)
+    ).fetchone()["total"]
+
+    recent_expenses = db.execute(
+        "SELECT * FROM expenses WHERE date(spent_at) >= ? ORDER BY spent_at DESC", (since,)
+    ).fetchall()
+
+    return render_template(
+        "reports.html",
+        days=days,
+        daily_income=daily_income,
+        by_product=by_product,
+        total_income=totals["income"],
+        total_expenses=total_expenses,
+        material_cost=totals["cost"],
+        net_profit=totals["income"] - total_expenses - totals["cost"],
+        recent_expenses=recent_expenses,
+        khr_per_usd=KHR_PER_USD,
+    )
+
+
+# ---------- Settings (payment QR code) ----------
+
+@app.route("/settings")
+@login_required
+def settings():
+    return render_template("settings.html", qr_filename=("payment_qr" if get_qr_data() else None))
+
+
+@app.route("/settings/qr/upload", methods=["POST"])
+@login_required
+def upload_qr():
+    file_storage = request.files.get("qr_image")
+    if not file_storage or not file_storage.filename:
+        flash(g.t("qr_upload_invalid"), "error")
+        return redirect(url_for("settings"))
+
+    if save_qr_upload(file_storage):
+        flash(g.t("qr_upload_success"), "success")
+    else:
+        flash(g.t("qr_upload_invalid"), "error")
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/qr/delete", methods=["POST"])
+@login_required
+def delete_qr():
+    clear_qr_upload()
+    flash(g.t("qr_delete_success"), "success")
+    return redirect(url_for("settings"))
+
+
+@app.route("/payment-qr-image")
+@login_required
+def payment_qr_image():
+    result = get_qr_data()
+    if not result:
+        return "", 404
+    image_bytes, mimetype = result
+    return app.response_class(image_bytes, mimetype=mimetype)
+
+
+if __name__ == "__main__":
+    init_db()
+    migrate_db()
+    app.run(host="0.0.0.0", port=5000, debug=True)
+else:
+    init_db()
+    migrate_db()
