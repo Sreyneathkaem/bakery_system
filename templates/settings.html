@@ -2,6 +2,9 @@
 {% block title %}{{ t('settings_title') }} — {{ t('app_name') }}{% endblock %}
 {% block content %}
 
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+
 <div class="page-title">
   <div>
     <h1>{{ t('settings_title') }}</h1>
@@ -28,13 +31,72 @@
     <div class="empty-state" style="margin-bottom:16px;">{{ t('qr_no_current') }}</div>
     {% endif %}
 
-    <form method="POST" action="{{ url_for('upload_qr') }}" enctype="multipart/form-data" class="form-row">
-      <div class="field">
-        <input type="file" name="qr_image" accept=".png,.jpg,.jpeg,.webp" required>
+    <div class="field" style="margin-bottom:14px;">
+      <input type="file" id="qr-file-input" accept=".png,.jpg,.jpeg,.webp">
+    </div>
+
+    <div id="crop-wrap" style="display:none;">
+      <p class="field-hint" style="margin-bottom:10px;">{{ t('qr_crop_hint') }}</p>
+      <div style="max-width:420px; max-height:420px; background:#111; border-radius:8px; overflow:hidden;">
+        <img id="crop-target" style="max-width:100%;">
       </div>
-      <button type="submit">{{ t('qr_upload_btn') }}</button>
-    </form>
+      <div class="form-row" style="margin-top:14px;">
+        <button type="button" id="save-crop-btn" class="btn">{{ t('qr_save_crop_btn') }}</button>
+        <button type="button" id="cancel-crop-btn" class="btn secondary">{{ t('cancel_btn') }}</button>
+      </div>
+    </div>
+
+    <p id="qr-upload-status" class="field-hint"></p>
   </div>
 </div>
+
+<script>
+  (function () {
+    const fileInput = document.getElementById('qr-file-input');
+    const cropWrap = document.getElementById('crop-wrap');
+    const cropTarget = document.getElementById('crop-target');
+    const saveBtn = document.getElementById('save-crop-btn');
+    const cancelBtn = document.getElementById('cancel-crop-btn');
+    const statusEl = document.getElementById('qr-upload-status');
+    let cropper = null;
+
+    fileInput.addEventListener('change', function () {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        cropTarget.src = e.target.result;
+        cropWrap.style.display = 'block';
+        if (cropper) { cropper.destroy(); }
+        cropper = new Cropper(cropTarget, {
+          aspectRatio: 1,
+          viewMode: 1,
+          autoCropArea: 0.8,
+          background: false,
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+
+    cancelBtn.addEventListener('click', function () {
+      if (cropper) { cropper.destroy(); cropper = null; }
+      cropWrap.style.display = 'none';
+      fileInput.value = '';
+    });
+
+    saveBtn.addEventListener('click', function () {
+      if (!cropper) return;
+      statusEl.textContent = '{{ t("generating_image") }}';
+      const canvas = cropper.getCroppedCanvas({ width: 600, height: 600, imageSmoothingQuality: 'high' });
+      canvas.toBlob(function (blob) {
+        const formData = new FormData();
+        formData.append('qr_image', blob, 'payment_qr.png');
+        fetch("{{ url_for('upload_qr') }}", { method: 'POST', body: formData })
+          .then(function () { window.location.href = "{{ url_for('settings') }}"; })
+          .catch(function () { statusEl.textContent = '{{ t("qr_upload_invalid") }}'; });
+      }, 'image/png');
+    });
+  })();
+</script>
 
 {% endblock %}

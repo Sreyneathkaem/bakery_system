@@ -663,6 +663,63 @@ button.danger-btn:hover { background: var(--danger-bg); }
   padding: 11px 12px;
 }
 
+.product-card {
+  margin-bottom: 16px;
+}
+
+.can-make-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--sage-bg);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin: 10px 0 14px;
+}
+
+.can-make-banner.can-make-zero {
+  background: var(--danger-bg);
+}
+
+.can-make-banner.can-make-unknown {
+  background: var(--linen);
+}
+
+.can-make-number {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--sage);
+  line-height: 1;
+  min-width: 44px;
+  text-align: center;
+}
+
+.can-make-zero .can-make-number {
+  color: var(--danger);
+}
+
+.can-make-text {
+  font-size: 0.88rem;
+  color: var(--rye);
+}
+
+.can-make-sub {
+  font-size: 0.8rem;
+  color: #6B5C4A;
+  margin-top: 2px;
+}
+
+.shared-warning {
+  background: #FBF0DD;
+  border-left: 3px solid var(--wheat);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  color: #6B5C4A;
+  margin-bottom: 10px;
+}
+
 .recipe-subhead {
   font-family: var(--font-body);
   font-size: 0.85rem;

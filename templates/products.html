@@ -10,22 +10,29 @@
 </div>
 
 <div class="section">
-  <div class="card">
-    <h3>{{ t('add_product_title') }}</h3>
-    <form method="POST" action="{{ url_for('add_product') }}" class="form-row">
+  <div class="materials-toolbar">
+    <span class="materials-count">{{ t('materials_count', count=products|length) }}</span>
+    <button type="button" class="btn" id="toggle-add-btn" onclick="toggleAddForm()">{{ t('add_material_toggle') }}</button>
+  </div>
+
+  <div class="card" id="add-form-card" style="display:none;">
+    <form method="POST" action="{{ url_for('add_product') }}" class="form-grid">
       <div class="field">
         <label for="name">{{ t('name') }}</label>
         <input type="text" id="name" name="name" placeholder="{{ t('product_name_ph') }}" required>
       </div>
       <div class="field">
         <label for="price_usd">{{ t('selling_price_usd') }}</label>
-        <input type="number" step="any" id="price_usd" name="price_usd" placeholder="0.00" style="width:120px">
+        <input type="number" step="any" id="price_usd" name="price_usd" placeholder="0.00">
       </div>
       <div class="field">
         <label for="price_riel">{{ t('selling_price_riel') }}</label>
-        <input type="number" step="any" id="price_riel" name="price_riel" placeholder="0" style="width:120px">
+        <input type="number" step="any" id="price_riel" name="price_riel" placeholder="0">
       </div>
-      <button type="submit">{{ t('add_product_btn') }}</button>
+      <div class="field field-submit">
+        <label>&nbsp;</label>
+        <button type="submit">{{ t('add_product_btn') }}</button>
+      </div>
     </form>
     <p class="field-hint">{{ t('cost_hint') }}</p>
     <p class="field-hint currency-preview" id="price-preview"></p>
@@ -33,6 +40,15 @@
 </div>
 
 <script>
+  function toggleAddForm() {
+    const card = document.getElementById('add-form-card');
+    const btn = document.getElementById('toggle-add-btn');
+    const isHidden = card.style.display === 'none';
+    card.style.display = isHidden ? 'block' : 'none';
+    btn.textContent = isHidden ? '{{ t("close_btn") }}' : '{{ t("add_material_toggle") }}';
+    if (isHidden) { document.getElementById('name').focus(); }
+  }
+
   (function () {
     const rate = {{ khr_per_usd }};
     const usdInput = document.getElementById('price_usd');
@@ -42,29 +58,33 @@
 
     function updatePreview() {
       if (lastEdited === 'usd' && usdInput.value) {
-        const usd = parseFloat(usdInput.value) || 0;
-        preview.textContent = `≈ ៛${Math.round(usd * rate).toLocaleString()}`;
+        preview.textContent = '≈ ៛' + Math.round((parseFloat(usdInput.value) || 0) * rate).toLocaleString();
       } else if (lastEdited === 'riel' && rielInput.value) {
-        const riel = parseFloat(rielInput.value) || 0;
-        preview.textContent = `≈ $${(riel / rate).toFixed(2)}`;
+        preview.textContent = '≈ $' + ((parseFloat(rielInput.value) || 0) / rate).toFixed(2);
       } else {
         preview.textContent = '';
       }
     }
-
     usdInput.addEventListener('input', function () { lastEdited = 'usd'; updatePreview(); });
     rielInput.addEventListener('input', function () { lastEdited = 'riel'; updatePreview(); });
-    document.querySelector('#name').closest('form').addEventListener('submit', function () {
+    document.querySelector('#add-form-card form').addEventListener('submit', function () {
       if (lastEdited === 'usd') { rielInput.value = ''; }
       if (lastEdited === 'riel') { usdInput.value = ''; }
     });
   })();
+
+  function fillRecipeForm(productId, materialId, batchQty, yieldCount) {
+    document.getElementById('recipe-material-' + productId).value = materialId;
+    document.getElementById('recipe-batch-' + productId).value = batchQty;
+    document.getElementById('recipe-yield-' + productId).value = yieldCount;
+    document.getElementById('recipe-form-' + productId).scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 </script>
 
 <div class="section">
   {% if products %}
     {% for item in products %}
-    <div class="card" style="margin-bottom:16px;">
+    <div class="card product-card">
       <div class="section-head">
         <div>
           <h3>{{ item.product.name }} <span class="mono" style="font-weight:400; color:#8A7A63;">— ${{ '%.2f'|format(item.product.price) }} / ៛{{ '{:,.0f}'.format(item.product.price * khr_per_usd) }}</span></h3>
@@ -81,6 +101,27 @@
           <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
         </form>
       </div>
+
+      {% if item.recipe %}
+      <div class="can-make-banner {{ 'can-make-zero' if item.max_producible == 0 }}">
+        <div class="can-make-number">{{ item.max_producible }}</div>
+        <div class="can-make-text">
+          <div>{{ t('can_make_now') }} <strong>{{ item.product.name }}</strong></div>
+          {% if item.limiting_material %}
+          <div class="can-make-sub">{{ t('limited_by_label') }}: {{ item.limiting_material }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% for sm in item.shared_materials %}
+      <div class="shared-warning">
+        ⚠ {{ t('shared_material_warning', material=sm.material, products=sm.shared_with|join(', ')) }}
+      </div>
+      {% endfor %}
+      {% else %}
+      <div class="can-make-banner can-make-unknown">
+        <div class="can-make-text">{{ t('no_recipe_no_estimate') }}</div>
+      </div>
+      {% endif %}
 
       <h4 class="recipe-subhead">{{ t('recipe_title') }}</h4>
 
@@ -127,14 +168,5 @@
   <div class="empty-state">{{ t('no_products_yet') }}</div>
   {% endif %}
 </div>
-
-<script>
-  function fillRecipeForm(productId, materialId, batchQty, yieldCount) {
-    document.getElementById('recipe-material-' + productId).value = materialId;
-    document.getElementById('recipe-batch-' + productId).value = batchQty;
-    document.getElementById('recipe-yield-' + productId).value = yieldCount;
-    document.getElementById('recipe-form-' + productId).scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-</script>
 
 {% endblock %}
