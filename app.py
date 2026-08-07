@@ -1206,7 +1206,9 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
 else:
     init_db()
-    migrate_db()rice_usd", "").strip()
+    migrate_db()
+
+    price_usd_raw = request.form.get("price_usd", "").strip()
     price_riel_raw = request.form.get("price_riel", "").strip()
 
     if not name:
