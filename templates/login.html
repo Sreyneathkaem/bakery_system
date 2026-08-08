@@ -2,7 +2,7 @@
 <html lang="{{ current_lang }}">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>{{ t('login_title') }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
   <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
@@ -33,6 +33,10 @@
       <form method="POST">
         <input type="email" name="email" placeholder="{{ t('login_email_placeholder') }}" autofocus required>
         <input type="password" name="password" placeholder="{{ t('login_placeholder') }}" required>
+        <label class="login-remember-row">
+          <input type="checkbox" name="remember" value="1" checked>
+          {{ t('login_remember') }}
+        </label>
         <button type="submit">{{ t('login_btn') }}</button>
       </form>
     </div>

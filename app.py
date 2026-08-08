@@ -4,6 +4,7 @@ import base64
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from functools import wraps
 
 import psycopg2
@@ -41,6 +42,17 @@ KHR_PER_USD = float(os.environ.get("KHR_PER_USD", "4100"))
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+# The shop is in Phnom Penh — every "today", timestamp, and chart date in
+# this app is based on this timezone, not wherever the server happens to be
+# hosted (Render's servers run in UTC, which is 7 hours off).
+APP_TZ = ZoneInfo("Asia/Phnom_Penh")
+PG_TIMEZONE_NAME = "Asia/Phnom_Penh"
+
+
+def now_local():
+    """Current time in the shop's own timezone (Asia/Phnom_Penh)."""
+    return datetime.now(APP_TZ)
+
 
 # ---------- Database helpers (Postgres / Supabase) ----------
 #
@@ -77,10 +89,22 @@ class PGConnection:
         self._conn.close()
 
 
+def _connect():
+    """Opens a fresh Postgres connection and pins its session timezone to
+    Asia/Phnom_Penh, so NOW(), date(...) comparisons, and every timestamp
+    read back out are already in the shop's local time — no manual
+    conversion needed anywhere else in the app."""
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+    cur.execute("SET TIME ZONE %s", (PG_TIMEZONE_NAME,))
+    conn.commit()
+    cur.close()
+    return conn
+
+
 def get_db():
     if "db" not in g:
-        conn = psycopg2.connect(DATABASE_URL)
-        g.db = PGConnection(conn)
+        g.db = PGConnection(_connect())
     return g.db
 
 
@@ -93,7 +117,7 @@ def close_db(exception=None):
 
 def init_db():
     """Creates tables if they don't exist yet. Safe to run every startup."""
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = _connect()
     cur = conn.cursor()
     with open(SCHEMA_PATH) as f:
         cur.execute(f.read())
@@ -106,7 +130,7 @@ def migrate_db():
     """Add columns introduced after the initial release, for anyone
     upgrading an existing database without losing data. Safe to call every
     startup — each check is a no-op if the column already exists."""
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = _connect()
     cur = conn.cursor()
 
     def column_exists(table, column):
@@ -122,6 +146,8 @@ def migrate_db():
         cur.execute("ALTER TABLE orders ADD COLUMN customer_address TEXT")
     if not column_exists("orders", "created_by_email"):
         cur.execute("ALTER TABLE orders ADD COLUMN created_by_email TEXT")
+    if not column_exists("orders", "payment_status"):
+        cur.execute("ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'pending'")
     if not column_exists("materials", "supplier_name"):
         cur.execute("ALTER TABLE materials ADD COLUMN supplier_name TEXT")
     if not column_exists("materials", "supplier_contact"):
@@ -314,6 +340,10 @@ def set_lang(code):
 # There's no public sign-up page in this app on purpose — accounts are
 # created by whoever administers the Supabase project, not by visitors.
 
+# How long "keep me signed in" lasts before needing to log in again.
+REMEMBER_ME_DAYS = 30
+
+
 def supabase_auth_request(path, payload):
     """POSTs to Supabase's Auth (GoTrue) REST API. Returns (ok, data)."""
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
@@ -345,6 +375,7 @@ def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip()
         password = request.form.get("password", "")
+        remember = request.form.get("remember") == "1"
 
         if not SUPABASE_URL or not SUPABASE_ANON_KEY:
             flash(g.t("auth_not_configured"), "error")
@@ -356,6 +387,11 @@ def login():
         if ok and data.get("access_token"):
             session["user_email"] = data.get("user", {}).get("email", email)
             session["access_token"] = data["access_token"]
+            # "Keep me signed in" (checked by default) makes the session a
+            # long-lived cookie instead of one that disappears the moment
+            # the browser/PWA is closed — this is the actual fix for
+            # "login doesn't stay logged in".
+            session.permanent = bool(remember)
             nxt = request.args.get("next") or url_for("dashboard")
             return redirect(nxt)
         flash(g.t("login_wrong"), "error")
@@ -381,7 +417,7 @@ def dashboard():
         "SELECT * FROM materials WHERE stock_qty <= 0 ORDER BY stock_qty ASC"
     ).fetchall()
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = now_local().strftime("%Y-%m-%d")
     today_orders = db.execute(
         "SELECT COALESCE(SUM(total_amount), 0) as total, "
         "COALESCE((SELECT SUM(quantity) FROM order_items JOIN orders o ON o.id = order_items.order_id WHERE date(o.ordered_at) = ?), 0) as units "
@@ -389,7 +425,7 @@ def dashboard():
         (today, today),
     ).fetchone()
 
-    week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+    week_ago = (now_local() - timedelta(days=7)).strftime("%Y-%m-%d")
     week_orders = db.execute(
         "SELECT COALESCE(SUM(total_amount), 0) as total FROM orders WHERE date(ordered_at) >= ?",
         (week_ago,),
@@ -404,7 +440,7 @@ def dashboard():
 
     # Filterable chart: orders total per day, over the selected window.
     chart_days = int(request.args.get("chart_days", 7))
-    chart_since = (datetime.now() - timedelta(days=chart_days)).strftime("%Y-%m-%d")
+    chart_since = (now_local() - timedelta(days=chart_days)).strftime("%Y-%m-%d")
     chart_data = db.execute(
         "SELECT date(ordered_at) as day, SUM(total_amount) as total, COUNT(*) as order_count "
         "FROM orders WHERE date(ordered_at) >= ? GROUP BY day ORDER BY day ASC",
@@ -880,9 +916,11 @@ def add_order():
     total_cost = sum(ld["line_cost"] for ld in line_details)
     total_profit = total_amount - total_cost
 
+    # New orders always start out "pending" — the person taps to mark an
+    # order paid once the customer actually pays.
     cursor = db.execute(
-        "INSERT INTO orders (customer_name, customer_phone, customer_address, note, total_amount, total_cost, total_profit, created_by_email) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO orders (customer_name, customer_phone, customer_address, note, total_amount, total_cost, total_profit, payment_status, created_by_email) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?) RETURNING id",
         (customer_name or None, customer_phone or None, customer_address or None, note or None, total_amount, total_cost, total_profit, session.get("user_email")),
     )
     order_id = cursor.fetchone()["id"]
@@ -996,6 +1034,19 @@ def delete_order(order_id):
     db.commit()
     flash(g.t("order_deleted"), "success")
     return redirect(url_for("orders"))
+
+
+@app.route("/orders/<int:order_id>/toggle-payment", methods=["POST"])
+@login_required
+def toggle_payment_status(order_id):
+    db = get_db()
+    order = db.execute("SELECT payment_status FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if order:
+        new_status = "pending" if order["payment_status"] == "paid" else "paid"
+        db.execute("UPDATE orders SET payment_status = ? WHERE id = ?", (new_status, order_id))
+        db.commit()
+        flash(g.t("flash_payment_updated"), "success")
+    return redirect(request.referrer or url_for("orders"))
 
 
 @app.route("/orders/<int:order_id>/invoice")
@@ -1115,7 +1166,7 @@ def reports():
     db = get_db()
 
     days = int(request.args.get("days", 30))
-    since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    since = (now_local() - timedelta(days=days)).strftime("%Y-%m-%d")
 
     daily_income = db.execute(
         "SELECT date(ordered_at) as day, SUM(total_amount) as total "
@@ -1201,9 +1252,15 @@ def payment_qr_image():
 
 
 if __name__ == "__main__":
+    # Sessions default to a 31-day lifetime once marked permanent (see the
+    # "remember me" checkbox on the login page) — this is what keeps people
+    # logged in across app restarts and phone reboots instead of only for
+    # the current browser session.
+    app.permanent_session_lifetime = timedelta(days=REMEMBER_ME_DAYS)
     init_db()
     migrate_db()
     app.run(host="0.0.0.0", port=5000, debug=True)
 else:
+    app.permanent_session_lifetime = timedelta(days=REMEMBER_ME_DAYS)
     init_db()
     migrate_db()

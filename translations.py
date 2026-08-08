@@ -20,6 +20,7 @@ TR = {
         "login_email_placeholder": "អ៊ីមែល",
         "login_placeholder": "ពាក្យសម្ងាត់",
         "login_btn": "ចូល",
+        "login_remember": "ចងចាំការចូលរបស់ខ្ញុំ",
         "login_wrong": "អ៊ីមែល ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវ។ សូមព្យាយាមម្តងទៀត។",
         "auth_not_configured": "ការចូលប្រើមិនទាន់ត្រូវបានកំណត់ទេ។ សូមមើលឯកសារ README ដើម្បីភ្ជាប់ Supabase។",
 
@@ -144,7 +145,7 @@ TR = {
 
         # Orders
         "orders_title": "ការកម្ម៉ង់អតិថិជន",
-        "orders_sub": "កត់ត្រាការកម្ម៉ង់ប្រចាំថ្ងៃ។ ស្តុកនឹងត្រូវកាត់ចេញ និងគណនាចំណេញដោយស្វ័យប្រវត្តិ។",
+        "orders_sub": "ចុចលើផលិតផលដើម្បីបន្ថែមទៅការកម្ម៉ង់លឿនៗ។ ស្តុកនឹងត្រូវកាត់ចេញ និងគណនាចំណេញដោយស្វ័យប្រវត្តិ។",
         "new_order_title": "ការកម្ម៉ង់ថ្មី",
         "customer_name_label": "ឈ្មោះអតិថិជន (មិនចាំបាច់)",
         "customer_name_ph": "ឧ. គ្រូពេទ្យ សុភា",
@@ -176,6 +177,19 @@ TR = {
         "update_order_btn": "រក្សាទុកការកែប្រែ",
         "order_updated_success": "បានធ្វើបច្ចុប្បន្នភាពការកម្ម៉ង់ដោយជោគជ័យ។",
         "order_total_col": "សរុបការកម្ម៉ង់",
+        "tap_to_add_hint": "ចុចលើផលិតផលដើម្បីបន្ថែម — ចុចម្តងទៀតដើម្បីបន្ថែមចំនួន",
+        "your_order_label": "ការកម្ម៉ង់បច្ចុប្បន្ន",
+        "empty_order_hint": "មិនទាន់ជ្រើសរើសផលិតផលទេ — ចុចលើផលិតផលខាងលើ",
+        "add_customer_info_btn": "បន្ថែមព័ត៌មានអតិថិជន (មិនចាំបាច់)",
+        "clear_order_btn": "សម្អាត",
+
+        # Payment status
+        "payment_status_col": "ការទូទាត់",
+        "payment_pending": "រង់ចាំទូទាត់",
+        "payment_paid": "បានទូទាត់ហើយ",
+        "mark_paid_btn": "កំណត់ថាបានទូទាត់",
+        "mark_pending_btn": "កំណត់ថារង់ចាំ",
+        "flash_payment_updated": "បានធ្វើបច្ចុប្បន្នភាពស្ថានភាពទូទាត់។",
 
         # Invoice (matches printed invoice book style)
         "invoice_title_km": "វិក្កយបត្រ",
@@ -297,6 +311,7 @@ TR = {
         "login_email_placeholder": "Email",
         "login_placeholder": "Password",
         "login_btn": "Open",
+        "login_remember": "Keep me signed in",
         "login_wrong": "Wrong email or password. Try again.",
         "auth_not_configured": "Login isn't set up yet. See the README to connect Supabase.",
 
@@ -417,7 +432,7 @@ TR = {
         "no_recipe_no_estimate": "Can't estimate yet — set a recipe first.",
 
         "orders_title": "Customer orders",
-        "orders_sub": "Log daily orders. Stock is deducted and profit calculated automatically.",
+        "orders_sub": "Tap products to add them to a new order quickly. Stock is deducted and profit calculated automatically.",
         "new_order_title": "New order",
         "customer_name_label": "Customer name (optional)",
         "customer_name_ph": "e.g. Dr. Sophea",
@@ -449,6 +464,19 @@ TR = {
         "update_order_btn": "Save changes",
         "order_updated_success": "Order updated successfully.",
         "order_total_col": "Order total",
+        "tap_to_add_hint": "Tap a product to add it — tap again to add more",
+        "your_order_label": "Current order",
+        "empty_order_hint": "No products selected yet — tap one above",
+        "add_customer_info_btn": "Add customer info (optional)",
+        "clear_order_btn": "Clear",
+
+        # Payment status
+        "payment_status_col": "Payment",
+        "payment_pending": "Pending",
+        "payment_paid": "Paid",
+        "mark_paid_btn": "Mark paid",
+        "mark_pending_btn": "Mark pending",
+        "flash_payment_updated": "Payment status updated.",
 
         # Invoice (matches printed invoice book style)
         "invoice_title_km": "វិក្កយបត្រ",

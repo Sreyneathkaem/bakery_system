@@ -1,10 +1,38 @@
 # ពងទាប្រៃបេកខេរី — Bakery Tracker
 
 A small, self-hosted web app to track ingredient stock, customer orders, and
-income for ពងទាប្រៃបេកខេរី. Built for one user (no complicated accounts/
-roles), runs entirely on your own hardware, stores everything in a single
-SQLite file so backups are just copying one file, and works fully in
-**Khmer** (with an English toggle for anyone else maintaining it).
+income for ពងទាប្រៃបេកខេរី. Built for two users (no complicated
+accounts/roles), works fully in **Khmer** (with an English toggle for anyone
+else maintaining it), and is mobile-first — most days this will be run from
+a phone at the counter, not a desktop.
+
+## What's new in this update
+
+Based on feedback from actually using the app day-to-day:
+
+- **Simpler mobile navigation.** A fixed bottom bar (Dashboard, Materials,
+  Orders, Products, Reports) replaces the old scrolling row of top tabs on
+  phones — 5 big thumb-friendly buttons instead of small tabs you had to
+  scroll sideways to find.
+- **Fewer taps to log an order.** The Orders page now shows your products as
+  tappable cards — tap once to add one, tap again to add more. A running
+  order summary at the bottom lets you adjust quantities with +/− buttons.
+  Customer name/phone/address are tucked behind an optional "Add customer
+  info" toggle since most orders are walk-ins and don't need them.
+- **One consistent font everywhere** (Kantumruy Pro), in both Khmer and
+  English, instead of three different typefaces that didn't match each
+  other from one part of the screen to the next.
+- **Clearer charts.** Bar labels are now horizontal instead of sideways
+  text, bars are sized for phone screens, and numbers stay above each bar.
+- **Correct time.** Every timestamp and "today" calculation is now pinned to
+  **Asia/Phnom_Penh**, not the server's own clock (Render's servers run on
+  UTC, which is 7 hours off — this is what caused times to look wrong).
+- **Login actually stays logged in.** There's a "Keep me signed in" checkbox
+  (checked by default) on the login page — sessions now last 30 days
+  instead of disappearing the moment the browser or PWA is closed.
+- **Payment status.** Every order starts as **Pending**. Tap the badge next
+  to an order (on the Orders list or on its invoice) to mark it **Paid** —
+  no form, just a tap, and it flips back if tapped again by mistake.
 
 ## What it does
 
@@ -25,14 +53,15 @@ SQLite file so backups are just copying one file, and works fully in
   amount and how many it yields, and the app works out the exact amount
   used per bread automatically. Each product also shows its cost per unit
   and profit margin.
-- **Orders** — log a customer's order (one or several products at once, with
-  optional customer name, phone, address, and note). Stock for every
-  ingredient involved is deducted in real time based on each product's
-  recipe, and the order won't save if there isn't enough stock — it tells
-  you exactly what's short. Orders can be **edited** afterward — the app
-  correctly reverses the original stock deduction and reapplies the new
-  one, so stock always stays accurate. The Orders page also shows a running
-  total of recent orders.
+- **Orders** — tap products to build an order quickly (one or several at
+  once), with optional customer name, phone, address, and note tucked
+  behind a toggle. Stock for every ingredient involved is deducted in real
+  time based on each product's recipe, and the order won't save if there
+  isn't enough stock — it tells you exactly what's short. Every order
+  starts **Pending**; tap its badge to mark it **Paid** once the customer
+  pays. Orders can be **edited** afterward — the app correctly reverses the
+  original stock deduction and reapplies the new one, so stock always stays
+  accurate. The Orders page also shows a running total of recent orders.
 - **Invoices (as an image)** — every order has an invoice with your logo,
   styled like a standard printed invoice book (buyer info, itemized goods
   table, total in $ and ៛, a payment QR code if you've uploaded one, buyer/
@@ -44,12 +73,17 @@ SQLite file so backups are just copying one file, and works fully in
   and it appears on every invoice so customers can scan to pay directly.
   Tucked behind the ⚙ icon in the top right, since it's a set-once page.
 - **Dashboard** — today's income, this week's income, out-of-stock
-  materials, recent orders, and a filterable orders chart (7/30/90 days).
+  materials, recent orders (with payment status), and a filterable orders
+  chart (7/30/90 days).
 - **Reports** — income by day (chart), income by product (chart and table),
   material cost used, other expenses (in $ or ៛), and net profit over a
   chosen period.
 - **Khmer / English** — the whole interface is in Khmer by default (in the
-  Kantumruy Pro font), with a ខ្មែរ / EN switch in the top right of every page.
+  Kantumruy Pro font, used consistently everywhere), with a ខ្មែរ / EN
+  switch in the top right of every page.
+- **Mobile-first** — a fixed bottom navigation bar on phones, tap-to-add
+  order entry, and a layout that's designed to be used one-handed at the
+  counter, not just adapted from a desktop layout.
 
 ## Two ways to run this app
 
@@ -173,7 +207,7 @@ across restarts and reboots. Back it up with `./backup.sh` (see below).
 It's already a **web app** — no separate build needed. Open your Render
 URL (or your self-hosted address) in your phone's browser and use the menu
 to **"Add to Home Screen"**. It'll get its own icon and open full-screen,
-like an installed app.
+like an installed app, with the bottom navigation bar for getting around.
 
 If self-hosting (Option B) and you want to reach it from outside your home
 network, [Tailscale](https://tailscale.com/) (free for personal use) is the
@@ -184,7 +218,8 @@ the same account, then open `http://<tailscale-machine-name>:5000`.
 
 Every order has an **Invoice** link (on the Orders page, next to each order).
 Opening it gives a clean invoice — styled like a standard printed invoice
-book, with buyer info, an itemized table, and a total — with three buttons:
+book, with buyer info, an itemized table, and a total — plus a **Paid /
+Pending** badge at the top you can tap to update.
 
 The invoice is rendered as an actual **image** (captured from what's on
 screen, so Khmer text always looks right), with four buttons:
@@ -243,8 +278,8 @@ To let customers scan and pay directly from the invoice:
 
 That's it — the QR code now appears on every invoice, with a "Scan to pay"
 label underneath. You can replace or delete it any time from the same
-Settings page. It's stored in your `data` folder alongside your database,
-so it's included if you back that up.
+Settings page. It's stored in the database itself, so it's included in any
+Supabase/Postgres backup.
 
 ## Changing the logo
 
@@ -314,6 +349,11 @@ bakery-app/
   restocking. It's an estimate of ingredient cost per order, not total
   spend on ingredients.
 - **Net profit** = income − material cost (used) − other logged expenses.
+- **Payment status**: every order starts **Pending**. Tap its badge (on the
+  Orders list, dashboard, or the invoice page) to flip it to **Paid** — tap
+  again if you tapped by mistake. This is independent of stock/income
+  numbers; income is recorded when the order is logged either way, so
+  Reports reflect what was sold, not what's been collected yet.
 - An order can include several different products at once (e.g. 5 chocolate
   breads + 10 plain breads in one order) — stock for shared ingredients like
   flour is deducted correctly across all lines.
@@ -343,6 +383,12 @@ bakery-app/
 - **Dashboard chart**: shows order totals per day for the last 7, 30, or 90
   days (pick from the dropdown) — a quick way to see if business is
   trending up or down without opening the full Reports page.
+- **Time zone**: every "today", timestamp, and chart date is calculated in
+  **Asia/Phnom_Penh**, regardless of where the server itself is physically
+  hosted (Render's free tier runs on UTC servers).
+- **Staying logged in**: the "Keep me signed in" checkbox on the login page
+  (checked by default) keeps you signed in for 30 days. Uncheck it on a
+  shared/public device if you don't want that.
 - The default language is Khmer. Switch anytime with the ខ្មែរ / EN toggle
   top-right; your choice is remembered for that browser session.
 - **Out of stock**: materials no longer use a manually-set "reorder

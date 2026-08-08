@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS orders (
     total_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
     total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
     total_profit DOUBLE PRECISION NOT NULL DEFAULT 0,
+    payment_status TEXT NOT NULL DEFAULT 'pending',  -- 'pending' or 'paid'
     created_by_email TEXT,               -- which logged-in person placed it
     ordered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

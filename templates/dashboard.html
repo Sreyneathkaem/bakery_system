@@ -93,7 +93,7 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>{{ t('customer') }}</th><th class="num">{{ t('total') }}</th><th class="num">{{ t('profit') }}</th><th>{{ t('when') }}</th></tr>
+        <tr><th>{{ t('customer') }}</th><th class="num">{{ t('total') }}</th><th class="num">{{ t('profit') }}</th><th>{{ t('payment_status_col') }}</th><th>{{ t('when') }}</th></tr>
       </thead>
       <tbody>
         {% for o in recent_orders %}
@@ -101,6 +101,13 @@
           <td>{{ o.customer_name or t('walk_in_customer') }}</td>
           <td class="num mono">${{ '%.2f'|format(o.total_amount) }}</td>
           <td class="num mono">${{ '%.2f'|format(o.total_profit) }}</td>
+          <td>
+            {% if o.payment_status == 'paid' %}
+            <span class="badge paid">{{ t('payment_paid') }}</span>
+            {% else %}
+            <span class="badge pending">{{ t('payment_pending') }}</span>
+            {% endif %}
+          </td>
           <td>{{ o.ordered_at.strftime('%Y-%m-%d %H:%M') }}</td>
         </tr>
         {% endfor %}

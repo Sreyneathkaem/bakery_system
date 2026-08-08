@@ -11,6 +11,18 @@
   <a href="{{ url_for('orders') }}" class="btn secondary">&larr; {{ t('back_to_orders') }}</a>
 </div>
 
+<div class="section no-print" style="max-width:600px; margin:0 auto 16px; display:flex; align-items:center; justify-content:space-between;">
+  <form method="POST" action="{{ url_for('toggle_payment_status', order_id=order.id) }}">
+    <button type="submit" class="payment-toggle-btn">
+      {% if order.payment_status == 'paid' %}
+      <span class="badge paid" style="font-size:0.9rem; padding:6px 14px;">{{ t('payment_paid') }}</span>
+      {% else %}
+      <span class="badge pending" style="font-size:0.9rem; padding:6px 14px;">{{ t('payment_pending') }}</span>
+      {% endif %}
+    </button>
+  </form>
+</div>
+
 <div class="invoice-card" id="invoice-card">
   <div class="invoice-head">
     <div class="invoice-shop-block">

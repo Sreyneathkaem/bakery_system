@@ -2,7 +2,7 @@
 <html lang="{{ current_lang }}">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>{% block title %}{{ t('app_name') }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
   <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
@@ -23,7 +23,7 @@
       <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">{{ t('nav_dashboard') }}</a>
       <a href="{{ url_for('materials') }}" class="{{ 'active' if request.endpoint == 'materials' }}">{{ t('nav_materials') }}</a>
       <a href="{{ url_for('products') }}" class="{{ 'active' if request.endpoint == 'products' }}">{{ t('nav_products') }}</a>
-      <a href="{{ url_for('orders') }}" class="{{ 'active' if request.endpoint == 'orders' }}">{{ t('nav_orders') }}</a>
+      <a href="{{ url_for('orders') }}" class="{{ 'active' if request.endpoint in ['orders', 'edit_order', 'order_invoice'] }}">{{ t('nav_orders') }}</a>
       <a href="{{ url_for('reports') }}" class="{{ 'active' if request.endpoint == 'reports' }}">{{ t('nav_reports') }}</a>
     </nav>
     <div class="header-right">
@@ -48,5 +48,25 @@
 
     {% block content %}{% endblock %}
   </main>
+
+  <!-- Mobile-only bottom nav: 5 big thumb-friendly targets instead of the
+       scrolling top tab row, so getting anywhere is a single tap. -->
+  <nav class="bottom-nav">
+    <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">
+      <span class="bn-icon">⌂</span>{{ t('nav_dashboard') }}
+    </a>
+    <a href="{{ url_for('materials') }}" class="{{ 'active' if request.endpoint == 'materials' }}">
+      <span class="bn-icon">🌾</span>{{ t('nav_materials') }}
+    </a>
+    <a href="{{ url_for('orders') }}" class="{{ 'active' if request.endpoint in ['orders', 'edit_order', 'order_invoice'] }}">
+      <span class="bn-icon">🧾</span>{{ t('nav_orders') }}
+    </a>
+    <a href="{{ url_for('products') }}" class="{{ 'active' if request.endpoint == 'products' }}">
+      <span class="bn-icon">🍞</span>{{ t('nav_products') }}
+    </a>
+    <a href="{{ url_for('reports') }}" class="{{ 'active' if request.endpoint == 'reports' }}">
+      <span class="bn-icon">📊</span>{{ t('nav_reports') }}
+    </a>
+  </nav>
 </body>
 </html>
