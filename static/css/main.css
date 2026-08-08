@@ -9,12 +9,13 @@
      --sage    #5C6E4F  herb green (positive / success)
      --danger  #A83A2E  scorched red (warnings / low stock)
    Type:
-     display -> "Fraunces" (warm, characterful slab serif)
-     body    -> "Work Sans" (clean humanist sans, legible on phones)
-     mono    -> "JetBrains Mono" (ledger-style numbers)
+     One consistent typeface family everywhere — Kantumruy Pro — so Khmer
+     and English text always look like the same app, whichever language is
+     selected. Numbers use a monospace face (ledger-style, easy to scan)
+     but only for digits, never mixed into Khmer sentences.
    ========================================================= */
 
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Kantumruy+Pro:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
   --rye: #2E2118;
@@ -29,13 +30,14 @@
   --danger: #A83A2E;
   --danger-bg: #F6E3DF;
 
-  --font-display: 'Fraunces', 'Kantumruy Pro', serif;
-  --font-body: 'Work Sans', 'Kantumruy Pro', sans-serif;
+  --font-display: 'Kantumruy Pro', sans-serif;
+  --font-body: 'Kantumruy Pro', sans-serif;
   --font-mono: 'JetBrains Mono', 'Kantumruy Pro', monospace;
 
   --radius: 10px;
   --shadow: 0 2px 10px rgba(46, 33, 24, 0.08);
   --shadow-lift: 0 6px 20px rgba(46, 33, 24, 0.14);
+  --bottom-nav-height: 60px;
 }
 
 * { box-sizing: border-box; }
@@ -59,9 +61,9 @@ h1, h2, h3 {
   margin: 0 0 0.4em 0;
 }
 
-h1 { font-size: 2rem; }
-h2 { font-size: 1.4rem; }
-h3 { font-size: 1.1rem; }
+h1 { font-size: 1.9rem; }
+h2 { font-size: 1.3rem; }
+h3 { font-size: 1.05rem; }
 
 .mono { font-family: var(--font-mono); }
 
@@ -76,13 +78,13 @@ h3 { font-size: 1.1rem; }
   justify-content: space-between;
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 30;
 }
 
 .brand {
   font-family: var(--font-display);
-  font-size: 1.3rem;
-  font-weight: 600;
+  font-size: 1.2rem;
+  font-weight: 700;
   color: var(--wheat);
   padding: 10px 0;
   display: flex;
@@ -96,11 +98,6 @@ h3 { font-size: 1.1rem; }
   height: 38px;
   border-radius: 50%;
   object-fit: cover;
-}
-
-.brand-mark {
-  font-size: 1.4rem;
-  line-height: 1;
 }
 
 nav.tabs {
@@ -205,6 +202,54 @@ main {
   font-size: 0.95rem;
 }
 
+/* ---------- Mobile bottom navigation ---------- */
+/* Replaces the top tab bar on small screens — 5 big, thumb-friendly
+   targets instead of a horizontally-scrolling row of tiny tabs. */
+
+.bottom-nav {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  nav.tabs { display: none; }
+
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: var(--bottom-nav-height);
+    background: var(--rye);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    z-index: 40;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .bottom-nav a {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    color: #C7B9A8;
+    text-decoration: none;
+    font-size: 0.68rem;
+    font-weight: 500;
+  }
+
+  .bottom-nav a .bn-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  .bottom-nav a.active {
+    color: var(--wheat);
+  }
+
+  body { padding-bottom: var(--bottom-nav-height); }
+  main { padding-bottom: calc(var(--bottom-nav-height) + 24px); }
+}
+
 /* ---------- Flash messages ---------- */
 
 .flash {
@@ -228,7 +273,7 @@ main {
 
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 16px;
   margin-bottom: 28px;
 }
@@ -255,21 +300,20 @@ main {
   background-color: var(--linen-dark);
 }
 .stat-card .label {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
   color: #8A7A63;
   font-weight: 600;
 }
 .stat-card .value {
   font-family: var(--font-display);
-  font-size: 1.9rem;
-  font-weight: 600;
+  font-size: 1.7rem;
+  font-weight: 700;
   margin-top: 4px;
   color: var(--rye);
 }
 .stat-card .sub {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: #8A7A63;
   margin-top: 2px;
 }
@@ -294,9 +338,8 @@ th, td {
 }
 
 th {
-  font-size: 0.76rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
   color: #8A7A63;
   font-weight: 600;
   background: var(--linen);
@@ -312,6 +355,7 @@ td.num, th.num { font-family: var(--font-mono); text-align: right; }
   box-shadow: var(--shadow);
   overflow-x: auto;
   margin-bottom: 28px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .badge {
@@ -320,9 +364,22 @@ td.num, th.num { font-family: var(--font-mono); text-align: right; }
   border-radius: 100px;
   font-size: 0.74rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 .badge.low { background: var(--danger-bg); color: var(--danger); }
 .badge.ok { background: var(--sage-bg); color: var(--sage); }
+.badge.pending { background: #FBF0DD; color: #8A6B2E; }
+.badge.paid { background: var(--sage-bg); color: var(--sage); }
+
+.payment-toggle-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.payment-toggle-btn .badge { cursor: pointer; }
+.payment-toggle-btn:hover .badge.pending { background: #F3E2BC; }
+.payment-toggle-btn:hover .badge.paid { background: #DCE6D3; }
 
 /* ---------- Forms ---------- */
 
@@ -411,9 +468,8 @@ td.num, th.num { font-family: var(--font-mono); text-align: right; }
 }
 
 .material-list-head {
-  font-size: 0.76rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
   color: #8A7A63;
   font-weight: 600;
   background: var(--linen);
@@ -580,6 +636,8 @@ button.danger-btn:hover { background: var(--danger-bg); }
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .empty-state {
@@ -744,7 +802,125 @@ button.danger-btn:hover { background: var(--danger-bg); }
 .margin-pos { color: var(--sage); font-weight: 600; }
 .margin-neg { color: var(--danger); font-weight: 600; }
 
-/* ---------- Order form (multi-line) ---------- */
+/* ---------- Orders: tap-to-add quick entry ---------- */
+
+.tap-hint {
+  font-size: 0.82rem;
+  color: #8A7A63;
+  margin: -6px 0 14px;
+}
+
+.product-tap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.product-tap-card {
+  position: relative;
+  background: var(--flour);
+  border: 1px solid var(--linen-dark);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.product-tap-card:active { transform: translateY(1px); }
+.product-tap-card.has-qty {
+  border-color: var(--crust);
+  background: #FBF1E4;
+}
+.product-tap-card .ptc-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--rye);
+  margin-bottom: 3px;
+}
+.product-tap-card .ptc-price {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: #8A7A63;
+}
+.product-tap-card .ptc-qty-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: var(--crust);
+  color: var(--flour);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.8rem;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.order-summary-bar {
+  background: var(--linen);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.order-summary-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.order-summary-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--linen-dark);
+}
+.order-summary-line:last-of-type { border-bottom: none; }
+
+.osl-qty-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.osl-qty-controls button {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  line-height: 1;
+  font-size: 1rem;
+  border-radius: 6px;
+}
+
+.order-summary-total {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 2px solid var(--crust);
+}
+
+.order-details-toggle {
+  font-size: 0.85rem;
+  color: var(--crust);
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ---------- Order form (legacy multi-line, still used on Edit order) ---------- */
 
 .order-line {
   align-items: flex-end;
@@ -797,27 +973,37 @@ button.danger-btn:hover { background: var(--danger-bg); }
   text-align: center;
 }
 
-.login-card .brand-mark { font-size: 2.4rem; display: block; margin-bottom: 8px; }
 .login-logo { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; margin: 0 auto 12px; display: block; }
 .login-card h1 { font-size: 1.5rem; margin-bottom: 6px; }
 .login-card p { color: #6B5C4A; font-size: 0.9rem; margin-bottom: 22px; }
 .login-card input { width: 100%; margin-bottom: 14px; text-align: center; }
 .login-card button { width: 100%; padding: 11px; }
+.login-remember-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: -6px 0 16px;
+  font-size: 0.85rem;
+  color: #6B5C4A;
+}
+.login-remember-row input { width: auto; margin: 0; }
 
-/* ---------- Bar chart (simple, dependency-free) ---------- */
+/* ---------- Bar chart (simple, dependency-free, tuned for small screens) ---------- */
 
 .bar-chart {
   display: flex;
   align-items: flex-end;
   justify-content: flex-start;
-  gap: 14px;
-  height: 190px;
-  padding: 16px 16px 0;
+  gap: 10px;
+  height: 180px;
+  padding: 18px 14px 10px;
   background: var(--flour);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   margin-bottom: 10px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .bar-chart .bar-col {
   flex: 0 0 auto;
@@ -826,8 +1012,8 @@ button.danger-btn:hover { background: var(--danger-bg); }
   align-items: center;
   justify-content: flex-end;
   height: 100%;
-  gap: 4px;
-  width: 40px;
+  gap: 6px;
+  width: 34px;
 }
 .bar-chart .bar {
   width: 100%;
@@ -836,16 +1022,15 @@ button.danger-btn:hover { background: var(--danger-bg); }
   min-height: 2px;
 }
 .bar-chart .bar-value {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   color: var(--rye);
   font-weight: 600;
   white-space: nowrap;
+  font-family: var(--font-mono);
 }
 .bar-chart .bar-label {
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   color: #8A7A63;
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
   white-space: nowrap;
 }
 
@@ -866,9 +1051,9 @@ button.danger-btn:hover { background: var(--danger-bg); }
 .hbar-row:last-child { margin-bottom: 0; }
 
 .hbar-label {
-  width: 110px;
+  width: 90px;
   flex-shrink: 0;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--rye);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -892,11 +1077,12 @@ button.danger-btn:hover { background: var(--danger-bg); }
 }
 
 .hbar-value {
-  width: 80px;
+  width: 74px;
   flex-shrink: 0;
   text-align: right;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--rye);
+  font-family: var(--font-mono);
 }
 
 /* ---------- Invoice ---------- */
@@ -938,7 +1124,7 @@ button.danger-btn:hover { background: var(--danger-bg); }
 
 .invoice-shop {
   font-family: var(--font-display);
-  font-size: 1.3rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--crust);
 }
@@ -955,7 +1141,7 @@ button.danger-btn:hover { background: var(--danger-bg); }
 
 .invoice-title-km {
   font-family: var(--font-display);
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: var(--crust);
   text-decoration: underline;
@@ -963,7 +1149,7 @@ button.danger-btn:hover { background: var(--danger-bg); }
 
 .invoice-title-en {
   font-size: 0.85rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: #6B5C4A;
 }
 
@@ -995,7 +1181,7 @@ button.danger-btn:hover { background: var(--danger-bg); }
   justify-content: space-between;
   align-items: center;
   font-family: var(--font-display);
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   font-weight: 700;
   border-top: 2px solid var(--crust);
   margin-top: 14px;
@@ -1075,10 +1261,10 @@ button.danger-btn:hover { background: var(--danger-bg); }
 }
 
 @media print {
-  .app-header, .no-print, .flash { display: none !important; }
+  .app-header, .bottom-nav, .no-print, .flash { display: none !important; }
   main { padding: 0; max-width: 100%; }
   .invoice-card { box-shadow: none; max-width: 100%; border: none; }
-  body { background: white; }
+  body { background: white; padding-bottom: 0; }
 }
 
 /* ---------- Responsive ---------- */
@@ -1086,9 +1272,14 @@ button.danger-btn:hover { background: var(--danger-bg); }
 @media (max-width: 640px) {
   .app-header { flex-wrap: wrap; padding: 0 14px; }
   main { padding: 20px 14px 50px; }
-  h1 { font-size: 1.6rem; }
+  h1 { font-size: 1.5rem; }
   .form-row { flex-direction: column; align-items: stretch; }
   .form-row .field { width: 100%; }
+  .form-row .field input,
+  .form-row .field select { width: 100% !important; }
+  .card { padding: 16px; }
+  .invoice-card { padding: 18px; }
+  .invoice-signatures { flex-direction: column; gap: 30px; }
 }
 
 /* Respect reduced motion */
