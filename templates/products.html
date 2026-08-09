@@ -116,11 +116,8 @@
         <div class="product-row-name">{{ item.product.name }}</div>
         {% if item.recipe %}
         <div class="product-row-sub">
-          {{ t('cost_per_unit_calc') }}: ${{ '%.2f'|format(item.cost_per_unit) }}
-          &nbsp;·&nbsp;
           {{ t('margin_label') }}:
           <span class="{{ 'margin-neg' if item.margin < 0 else 'margin-pos' }}">${{ '%.2f'|format(item.margin) }}</span>
-          &nbsp;·&nbsp;{{ t('can_make_now') }}: {{ item.max_producible }}
         </div>
         {% else %}
         <div class="product-row-sub">{{ t('no_recipe_no_estimate') }}</div>
@@ -133,37 +130,31 @@
     </div>
 
     <div class="product-detail-panel" id="detail-{{ item.product.id }}" style="display:none;">
-      <div class="section-head" style="padding-top:14px;">
-        <div class="mono" style="color:#8A7A63; font-size:0.85rem;">
-          ${{ '%.2f'|format(item.product.price) }} / ៛{{ '{:,.0f}'.format(item.product.price * khr_per_usd) }}
+      <div class="material-card-head" style="padding-top:14px;">
+        <div class="material-stat-line mono">
+          <span class="stat-label">{{ t('selling_price') }}:</span>${{ '%.2f'|format(item.product.price) }}
+          <span class="sep">·</span>
+          <span class="stat-label">{{ t('cost_per_unit_calc') }}:</span>${{ '%.2f'|format(item.cost_per_unit) }}
+          {% if item.recipe %}
+          <span class="sep">·</span>
+          <span class="stat-label">{{ t('can_make_now') }}:</span><span class="{{ 'margin-neg' if item.max_producible == 0 else '' }}">{{ item.max_producible }}</span>
+          {% endif %}
         </div>
         <form method="POST" action="{{ url_for('delete_product', product_id=item.product.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_product', name=item.product.name) }}');">
           <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
         </form>
       </div>
 
-      {% if item.recipe %}
-      <div class="can-make-banner {{ 'can-make-zero' if item.max_producible == 0 }}">
-        <div class="can-make-number">{{ item.max_producible }}</div>
-        <div class="can-make-text">
-          <div>{{ t('can_make_now') }} <strong>{{ item.product.name }}</strong></div>
-          {% if item.limiting_material %}
-          <div class="can-make-sub">{{ t('limited_by_label') }}: {{ item.limiting_material }}</div>
-          {% endif %}
-        </div>
-      </div>
+      {% if item.recipe and item.limiting_material %}
+      <div class="material-card-sub">{{ t('limited_by_label') }}: {{ item.limiting_material }}</div>
+      {% endif %}
       {% for sm in item.shared_materials %}
       <div class="shared-warning">
         ⚠ {{ t('shared_material_warning', material=sm.material, products=sm.shared_with|join(', ')) }}
       </div>
       {% endfor %}
-      {% else %}
-      <div class="can-make-banner can-make-unknown">
-        <div class="can-make-text">{{ t('no_recipe_no_estimate') }}</div>
-      </div>
-      {% endif %}
 
-      <h4 class="recipe-subhead">{{ t('recipe_title') }}</h4>
+      <h4 class="recipe-subhead" style="margin-top:14px;">{{ t('recipe_title') }}</h4>
       <p class="recipe-hint">{{ t('recipe_hint') }}</p>
 
       <div style="margin-bottom:14px;">
