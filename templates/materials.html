@@ -102,6 +102,27 @@
     const panel = document.getElementById(id);
     panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
   }
+
+  function closeAllMoreMenus(exceptId) {
+    document.querySelectorAll('.more-menu').forEach(function (el) {
+      if (!exceptId || el.id !== 'more-menu-' + exceptId) el.style.display = 'none';
+    });
+  }
+
+  function toggleMoreMenu(id) {
+    const menu = document.getElementById('more-menu-' + id);
+    const isOpen = menu.style.display === 'block';
+    closeAllMoreMenus();
+    menu.style.display = isOpen ? 'none' : 'block';
+  }
+
+  function closeMoreMenu(id) {
+    document.getElementById('more-menu-' + id).style.display = 'none';
+  }
+
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.more-menu-wrap')) closeAllMoreMenus();
+  });
 </script>
 
 <div class="section">
@@ -124,18 +145,23 @@
           <span class="stat-label">{{ t('cost_unit_col') }}:</span>${{ '%.2f'|format(m.cost_per_unit) }}
         </div>
         {% if m.supplier_name %}
-        <div class="material-card-sub">{{ t('supplier_col') }}: {{ m.supplier_name }}{% if m.supplier_contact %} ({{ m.supplier_contact }}){% endif %}</div>
+        <div class="material-card-sub">{{ t('supplier_col') }}: {{ m.supplier_name }}{% if m.supplier_contact %} ({{ m.supplier_contact}}){% endif %}</div>
         {% endif %}
       </div>
     </div>
 
     <div class="material-card-actions">
-      <button type="button" class="btn secondary btn-sm" onclick="togglePanel('restock-{{ m.id }}')">{{ t('restock_btn_action') }}</button>
-      <button type="button" class="btn secondary btn-sm" onclick="togglePanel('edit-{{ m.id }}')">{{ t('edit_btn') }}</button>
-      <button type="button" class="btn secondary btn-sm" onclick="togglePanel('history-{{ m.id }}')">{{ t('history_btn') }}</button>
-      <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
-      </form>
+      <button type="button" class="btn btn-restock" onclick="togglePanel('restock-{{ m.id }}')">{{ t('restock_btn_action') }}</button>
+      <div class="more-menu-wrap">
+        <button type="button" class="btn secondary more-menu-toggle" onclick="toggleMoreMenu({{ m.id }})">⋯</button>
+        <div class="more-menu" id="more-menu-{{ m.id }}" style="display:none;">
+          <button type="button" class="more-menu-item" onclick="togglePanel('edit-{{ m.id }}'); closeMoreMenu({{ m.id }});">{{ t('edit_btn') }}</button>
+          <button type="button" class="more-menu-item" onclick="togglePanel('history-{{ m.id }}'); closeMoreMenu({{ m.id }});">{{ t('history_btn') }}</button>
+          <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="more-menu-item more-menu-danger">{{ t('delete_btn')}}</button>
+          </form>
+        </div>
+      </div>
     </div>
 
     <div id="restock-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
@@ -164,7 +190,7 @@
       <p class="field-hint">{{ t('total_paid_hint') }}</p>
     </div>
 
-    <div id="edit-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
+    <div id="edit-{{ m.id }}" class="material-panel" data-group="{{m.id }}" style="display:none;">
       <form method="POST" action="{{ url_for('edit_material', material_id=m.id) }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
           <label>{{ t('name') }}</label>
@@ -188,7 +214,7 @@
         </div>
         <div class="field">
           <label>{{ t('cost_riel_label') }}</label>
-          <input type="number" step="any" name="cost_per_unit_riel" placeholder="{{ '{:,.0f}'.format(m.cost_per_unit * khr_per_usd) }}">
+          <input type="number" step="any" name="cost_per_unit_riel"placeholder="{{ '{:,.0f}'.format(m.cost_per_unit * khr_per_usd) }}">
         </div>
         <div class="field">
           <label>{{ t('supplier_name_label') }}</label>
@@ -226,7 +252,7 @@
           {% for h in hist %}
           <tr>
             <td>{{ h.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-            <td class="num mono {{ 'margin-pos' if h.change_qty > 0 else 'margin-neg' }}">{{ '%+.2f'|format(h.change_qty) }}</td>
+            <td class="num mono {{ 'margin-pos' if h.change_qty > 0else 'margin-neg' }}">{{ '%+.2f'|format(h.change_qty) }}</td>
             <td>
               {% if h.reason == 'restock' %}{{ t('reason_restock') }}
               {% elif h.reason == 'adjustment' %}{{ t('reason_adjustment') }}

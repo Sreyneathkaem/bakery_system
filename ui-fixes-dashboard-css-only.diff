@@ -1,0 +1,174 @@
+diff --git a/static/css/main.css b/static/css/main.css
+index c53e520..410bb42 100644
+--- a/static/css/main.css
++++ b/static/css/main.css
+@@ -479,13 +479,64 @@ td.num, th.num { font-family: var(--font-mono); text-align: right; }
+ 
+ .material-card-actions {
+   display: flex;
+-  flex-wrap: wrap;
++  align-items: center;
+   gap: 8px;
+   margin-top: 14px;
+   padding-top: 14px;
+   border-top: 1px solid var(--linen-dark);
+ }
+ 
++.material-card-actions .btn-restock {
++  flex: 1;
++}
++
++.more-menu-wrap {
++  position: relative;
++  flex-shrink: 0;
++}
++
++.more-menu-toggle {
++  width: 40px;
++  padding-left: 0;
++  padding-right: 0;
++  font-weight: 700;
++  letter-spacing: 1px;
++}
++
++.more-menu {
++  position: absolute;
++  right: 0;
++  top: calc(100% + 6px);
++  z-index: 20;
++  background: var(--flour);
++  border: 1px solid var(--linen-dark);
++  border-radius: var(--radius);
++  box-shadow: var(--shadow);
++  min-width: 150px;
++  overflow: hidden;
++}
++
++.more-menu-item {
++  display: block;
++  width: 100%;
++  text-align: left;
++  padding: 10px 14px;
++  background: none;
++  border: none;
++  border-radius: 0;
++  color: var(--rye);
++  font-weight: 500;
++  font-size: 0.9rem;
++  cursor: pointer;
++}
++.more-menu-item:hover { background: var(--linen); }
++
++.more-menu-danger { color: var(--danger); }
++.more-menu-danger:hover { background: var(--danger-bg); }
++
++.more-menu .inline-form { width: 100%; }
++.more-menu .inline-form button { width: 100%; }
++
+ .material-panel {
+   background: var(--flour);
+   border-radius: var(--radius);
+@@ -1184,13 +1235,16 @@ button.danger-btn:hover { background: var(--danger-bg); }
+ }
+ 
+ .invoice-qr-img {
+-  width: 300px;
+-  height: 300px;
++  width: 380px;
++  max-width: 100%;
++  aspect-ratio: 1 / 1;
++  height: auto;
+   object-fit: contain;
+   background: white;
+   border: 1px solid var(--linen-dark);
+   border-radius: 8px;
+   padding: 10px;
++  box-sizing: border-box;
+ }
+ 
+ .invoice-qr-label {
+diff --git a/templates/dashboard.html b/templates/dashboard.html
+index 2c87a90..0452a99 100644
+--- a/templates/dashboard.html
++++ b/templates/dashboard.html
+@@ -65,21 +65,18 @@
+     <h2>{{ t('running_low') }}</h2>
+     <a href="{{ url_for('materials') }}" class="btn secondary">{{ t('restock_btn') }}</a>
+   </div>
+-  <div class="table-wrap">
+-    <table>
+-      <thead>
+-        <tr><th>{{ t('name') }}</th><th class="num">{{ t('in_stock') }}</th><th>{{ t('status_col') }}</th></tr>
+-      </thead>
+-      <tbody>
+-        {% for m in low_stock %}
+-        <tr>
+-          <td>{{ m.name }}</td>
+-          <td class="num mono">{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }}</td>
+-          <td><span class="badge low">{{ t('low_badge') }}</span></td>
+-        </tr>
+-        {% endfor %}
+-      </tbody>
+-    </table>
++  <div class="product-list">
++    {% for m in low_stock %}
++    <div class="product-row">
++      <div class="product-row-main">
++        <div class="product-row-name">{{ m.name }}</div>
++        <div class="product-row-sub">{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }} {{ t('in_stock') }}</div>
++      </div>
++      <div class="product-row-right">
++        <span class="badge low">{{ t('low_badge') }}</span>
++      </div>
++    </div>
++    {% endfor %}
+   </div>
+ </div>
+ {% endif %}
+@@ -90,29 +87,23 @@
+     <a href="{{ url_for('orders') }}" class="btn secondary">{{ t('log_order_btn') }}</a>
+   </div>
+   {% if recent_orders %}
+-  <div class="table-wrap">
+-    <table>
+-      <thead>
+-        <tr><th>{{ t('customer') }}</th><th class="num">{{ t('total') }}</th><th class="num">{{ t('profit') }}</th><th>{{ t('payment_status_col') }}</th><th>{{ t('when') }}</th></tr>
+-      </thead>
+-      <tbody>
+-        {% for o in recent_orders %}
+-        <tr>
+-          <td>{{ o.customer_name or t('walk_in_customer') }}</td>
+-          <td class="num mono">${{ '%.2f'|format(o.total_amount) }}</td>
+-          <td class="num mono">${{ '%.2f'|format(o.total_profit) }}</td>
+-          <td>
+-            {% if o.payment_status == 'paid' %}
+-            <span class="badge paid">{{ t('payment_paid') }}</span>
+-            {% else %}
+-            <span class="badge pending">{{ t('payment_pending') }}</span>
+-            {% endif %}
+-          </td>
+-          <td>{{ o.ordered_at.strftime('%Y-%m-%d %H:%M') }}</td>
+-        </tr>
+-        {% endfor %}
+-      </tbody>
+-    </table>
++  <div class="product-list">
++    {% for o in recent_orders %}
++    <div class="product-row">
++      <div class="product-row-main">
++        <div class="product-row-name">{{ o.customer_name or t('walk_in_customer') }}</div>
++        <div class="product-row-sub">{{ t('profit') }}: ${{ '%.2f'|format(o.total_profit) }} &nbsp;·&nbsp; {{ o.ordered_at.strftime('%m-%d %H:%M') }}</div>
++      </div>
++      <div class="product-row-right">
++        {% if o.payment_status == 'paid' %}
++        <span class="badge paid">{{ t('payment_paid') }}</span>
++        {% else %}
++        <span class="badge pending">{{ t('payment_pending') }}</span>
++        {% endif %}
++        <span class="product-row-price mono">${{ '%.2f'|format(o.total_amount) }}</span>
++      </div>
++    </div>
++    {% endfor %}
+   </div>
+   {% else %}
+   <div class="empty-state">{{ t('no_orders_yet') }}</div>

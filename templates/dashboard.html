@@ -65,21 +65,18 @@
     <h2>{{ t('running_low') }}</h2>
     <a href="{{ url_for('materials') }}" class="btn secondary">{{ t('restock_btn') }}</a>
   </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>{{ t('name') }}</th><th class="num">{{ t('in_stock') }}</th><th>{{ t('status_col') }}</th></tr>
-      </thead>
-      <tbody>
-        {% for m in low_stock %}
-        <tr>
-          <td>{{ m.name }}</td>
-          <td class="num mono">{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }}</td>
-          <td><span class="badge low">{{ t('low_badge') }}</span></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="product-list">
+    {% for m in low_stock %}
+    <div class="product-row">
+      <div class="product-row-main">
+        <div class="product-row-name">{{ m.name }}</div>
+        <div class="product-row-sub">{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }} {{ t('in_stock') }}</div>
+      </div>
+      <div class="product-row-right">
+        <span class="badge low">{{ t('low_badge') }}</span>
+      </div>
+    </div>
+    {% endfor %}
   </div>
 </div>
 {% endif %}
@@ -90,29 +87,23 @@
     <a href="{{ url_for('orders') }}" class="btn secondary">{{ t('log_order_btn') }}</a>
   </div>
   {% if recent_orders %}
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>{{ t('customer') }}</th><th class="num">{{ t('total') }}</th><th class="num">{{ t('profit') }}</th><th>{{ t('payment_status_col') }}</th><th>{{ t('when') }}</th></tr>
-      </thead>
-      <tbody>
-        {% for o in recent_orders %}
-        <tr>
-          <td>{{ o.customer_name or t('walk_in_customer') }}</td>
-          <td class="num mono">${{ '%.2f'|format(o.total_amount) }}</td>
-          <td class="num mono">${{ '%.2f'|format(o.total_profit) }}</td>
-          <td>
-            {% if o.payment_status == 'paid' %}
-            <span class="badge paid">{{ t('payment_paid') }}</span>
-            {% else %}
-            <span class="badge pending">{{ t('payment_pending') }}</span>
-            {% endif %}
-          </td>
-          <td>{{ o.ordered_at.strftime('%Y-%m-%d %H:%M') }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="product-list">
+    {% for o in recent_orders %}
+    <div class="product-row">
+      <div class="product-row-main">
+        <div class="product-row-name">{{ o.customer_name or t('walk_in_customer') }}</div>
+        <div class="product-row-sub">{{ t('profit') }}: ${{ '%.2f'|format(o.total_profit) }} &nbsp;·&nbsp; {{ o.ordered_at.strftime('%m-%d %H:%M') }}</div>
+      </div>
+      <div class="product-row-right">
+        {% if o.payment_status == 'paid' %}
+        <span class="badge paid">{{ t('payment_paid') }}</span>
+        {% else %}
+        <span class="badge pending">{{ t('payment_pending') }}</span>
+        {% endif %}
+        <span class="product-row-price mono">${{ '%.2f'|format(o.total_amount) }}</span>
+      </div>
+    </div>
+    {% endfor %}
   </div>
   {% else %}
   <div class="empty-state">{{ t('no_orders_yet') }}</div>

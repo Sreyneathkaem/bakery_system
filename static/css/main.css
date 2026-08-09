@@ -479,12 +479,63 @@ td.num, th.num { font-family: var(--font-mono); text-align: right; }
 
 .material-card-actions {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--linen-dark);
 }
+
+.material-card-actions .btn-restock {
+  flex: 1;
+}
+
+.more-menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.more-menu-toggle {
+  width: 40px;
+  padding-left: 0;
+  padding-right: 0;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  background: var(--flour);
+  border: 1px solid var(--linen-dark);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  min-width: 150px;
+  overflow: hidden;
+}
+
+.more-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: var(--rye);
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.more-menu-item:hover { background: var(--linen); }
+
+.more-menu-danger { color: var(--danger); }
+.more-menu-danger:hover { background: var(--danger-bg); }
+
+.more-menu .inline-form { width: 100%; }
+.more-menu .inline-form button { width: 100%; }
 
 .material-panel {
   background: var(--flour);
@@ -1184,13 +1235,16 @@ button.danger-btn:hover { background: var(--danger-bg); }
 }
 
 .invoice-qr-img {
-  width: 300px;
-  height: 300px;
+  width: 380px;
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+  height: auto;
   object-fit: contain;
   background: white;
   border: 1px solid var(--linen-dark);
   border-radius: 8px;
   padding: 10px;
+  box-sizing: border-box;
 }
 
 .invoice-qr-label {
