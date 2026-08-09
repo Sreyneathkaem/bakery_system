@@ -11,11 +11,11 @@
 
 <div class="section">
   <div class="materials-toolbar">
-    <span class="materials-count">{{ t('materials_count', count=products|length) }}</span>
+    <span class="materials-count">{{ t('products_count', count=products|length) }}</span>
     <button type="button" class="btn" id="toggle-add-btn" onclick="toggleAddForm()">{{ t('add_material_toggle') }}</button>
   </div>
 
-  <div class="card" id="add-form-card" style="display:none;">
+  <div class="card" id="add-form-card" style="display:none; margin-bottom:16px;">
     <form method="POST" action="{{ url_for('add_product') }}" class="form-grid">
       <div class="field">
         <label for="name">{{ t('name') }}</label>
@@ -28,6 +28,16 @@
       <div class="field">
         <label for="price_riel">{{ t('selling_price_riel') }}</label>
         <input type="number" step="any" id="price_riel" name="price_riel" placeholder="0">
+      </div>
+      <div class="field">
+        <label for="category">{{ t('product_category_label') }}</label>
+        <select id="category" name="category">
+          <option value="bread">{{ t('category_bread') }}</option>
+          <option value="pastry">{{ t('category_pastry') }}</option>
+          <option value="cake">{{ t('category_cake') }}</option>
+          <option value="drink">{{ t('category_drink') }}</option>
+          <option value="other" selected>{{ t('category_other') }}</option>
+        </select>
       </div>
       <div class="field field-submit">
         <label>&nbsp;</label>
@@ -73,29 +83,59 @@
     });
   })();
 
+  // Accordion: only one product's recipe editor open at a time, so the
+  // page stays a short scannable list instead of everything expanded at
+  // once.
+  function toggleProductDetail(id) {
+    document.querySelectorAll('.product-detail-panel').forEach(function (el) {
+      if (el.id !== 'detail-' + id) el.style.display = 'none';
+    });
+    document.querySelectorAll('.product-row-chevron').forEach(function (el) {
+      if (el.id !== 'chevron-' + id) el.classList.remove('open');
+    });
+    const panel = document.getElementById('detail-' + id);
+    const chevron = document.getElementById('chevron-' + id);
+    const isOpen = panel.style.display === 'block';
+    panel.style.display = isOpen ? 'none' : 'block';
+    chevron.classList.toggle('open', !isOpen);
+  }
+
   function fillRecipeForm(productId, materialId, batchQty, yieldCount) {
     document.getElementById('recipe-material-' + productId).value = materialId;
     document.getElementById('recipe-batch-' + productId).value = batchQty;
     document.getElementById('recipe-yield-' + productId).value = yieldCount;
-    document.getElementById('recipe-form-' + productId).scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 </script>
 
 <div class="section">
   {% if products %}
+  <div class="product-list">
     {% for item in products %}
-    <div class="card product-card">
-      <div class="section-head">
-        <div>
-          <h3>{{ item.product.name }} <span class="mono" style="font-weight:400; color:#8A7A63;">— ${{ '%.2f'|format(item.product.price) }} / ៛{{ '{:,.0f}'.format(item.product.price * khr_per_usd) }}</span></h3>
-          {% if item.recipe %}
-          <div class="cost-margin-line mono">
-            {{ t('cost_per_unit_calc') }}: ${{ '%.2f'|format(item.cost_per_unit) }}
-            &nbsp;·&nbsp;
-            {{ t('margin_label') }}:
-            <span class="{{ 'margin-neg' if item.margin < 0 else 'margin-pos' }}">${{ '%.2f'|format(item.margin) }}</span>
-          </div>
-          {% endif %}
+    <div class="product-row" onclick="toggleProductDetail({{ item.product.id }})">
+      <div class="product-row-main">
+        <div class="product-row-name">{{ item.product.name }}</div>
+        {% if item.recipe %}
+        <div class="product-row-sub">
+          {{ t('cost_per_unit_calc') }}: ${{ '%.2f'|format(item.cost_per_unit) }}
+          &nbsp;·&nbsp;
+          {{ t('margin_label') }}:
+          <span class="{{ 'margin-neg' if item.margin < 0 else 'margin-pos' }}">${{ '%.2f'|format(item.margin) }}</span>
+          &nbsp;·&nbsp;{{ t('can_make_now') }}: {{ item.max_producible }}
+        </div>
+        {% else %}
+        <div class="product-row-sub">{{ t('no_recipe_no_estimate') }}</div>
+        {% endif %}
+      </div>
+      <div class="product-row-right">
+        <span class="product-row-price mono">${{ '%.2f'|format(item.product.price) }}</span>
+        <span class="product-row-chevron" id="chevron-{{ item.product.id }}">›</span>
+      </div>
+    </div>
+
+    <div class="product-detail-panel" id="detail-{{ item.product.id }}" style="display:none;">
+      <div class="section-head" style="padding-top:14px;">
+        <div class="mono" style="color:#8A7A63; font-size:0.85rem;">
+          ${{ '%.2f'|format(item.product.price) }} / ៛{{ '{:,.0f}'.format(item.product.price * khr_per_usd) }}
         </div>
         <form method="POST" action="{{ url_for('delete_product', product_id=item.product.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_product', name=item.product.name) }}');">
           <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
@@ -124,10 +164,11 @@
       {% endif %}
 
       <h4 class="recipe-subhead">{{ t('recipe_title') }}</h4>
+      <p class="recipe-hint">{{ t('recipe_hint') }}</p>
 
       <div style="margin-bottom:14px;">
         {% for r in item.recipe %}
-        <span class="recipe-chip recipe-chip-editable" onclick="fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.batch_qty }}, {{ r.yield_count }})">
+        <span class="recipe-chip recipe-chip-editable" onclick="event.stopPropagation(); fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.batch_qty }}, {{ r.yield_count }})">
           {{ r.batch_qty|round(3) }}{{ r.unit }} {{ r.material_name }} {{ t('makes_label') }} {{ r.yield_count|round(0)|int }} {{ t('loaves_unit') }}
           <span class="chip-sub">({{ r.quantity_per_unit|round(4) }}{{ r.unit }}{{ t('per_unit_suffix') }})</span>
           <form method="POST" action="{{ url_for('remove_recipe_ingredient', ingredient_id=r.id) }}" class="inline-form" onclick="event.stopPropagation();">
@@ -139,7 +180,7 @@
         {% endfor %}
       </div>
 
-      <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="form-grid recipe-form" id="recipe-form-{{ item.product.id }}">
+      <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="form-grid recipe-form" id="recipe-form-{{ item.product.id }}" onclick="event.stopPropagation();">
         <div class="field">
           <label>{{ t('material_col') }}</label>
           <select name="material_id" id="recipe-material-{{ item.product.id }}" required>
@@ -164,6 +205,7 @@
       </form>
     </div>
     {% endfor %}
+  </div>
   {% else %}
   <div class="empty-state">{{ t('no_products_yet') }}</div>
   {% endif %}

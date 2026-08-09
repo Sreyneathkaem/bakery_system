@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS products (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     price DOUBLE PRECISION NOT NULL DEFAULT 0,
+    category TEXT NOT NULL DEFAULT 'other',  -- 'bread' | 'pastry' | 'cake' | 'drink' | 'other'
     active INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

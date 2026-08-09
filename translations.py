@@ -91,6 +91,7 @@ TR = {
         "material_price_riel_label": "តម្លៃសរុប (៛)",
         "add_material_toggle": "＋ បន្ថែមវត្ថុធាតុដើម",
         "materials_count": "{count} វត្ថុធាតុដើម",
+        "products_count": "{count} ផលិតផល",
         "actions_menu_label": "សកម្មភាព",
         "close_btn": "បិទ",
         "supplier_contact_label": "អ្នកលក់ (លេខទូរស័ព្ទ)",
@@ -191,6 +192,21 @@ TR = {
         "mark_pending_btn": "កំណត់ថារង់ចាំ",
         "flash_payment_updated": "បានធ្វើបច្ចុប្បន្នភាពស្ថានភាពទូទាត់។",
 
+        # Product categories
+        "category_bread": "នំបុ័ង",
+        "category_pastry": "នំចំណិត",
+        "category_cake": "នំកេក",
+        "category_drink": "ភេសជ្ជៈ",
+        "category_other": "ផ្សេងៗ",
+        "product_category_label": "ប្រភេទ",
+
+        # Orders — two-step flow
+        "order_step1_title": "ជំហានទី១៖ ជ្រើសរើសផលិតផល",
+        "order_step2_title": "ជំហានទី២៖ បញ្ជាក់ការកម្ម៉ង់",
+        "next_step_btn": "បន្ទាប់",
+        "back_step_btn": "← ត្រឡប់ក្រោយទៅជ្រើសរើសផលិតផល",
+        "order_items_count": "{count} មុខ",
+
         # Invoice (matches printed invoice book style)
         "invoice_title_km": "វិក្កយបត្រ",
         "invoice_title_en": "INVOICE",
@@ -280,8 +296,8 @@ TR = {
         "settings_title": "ការកំណត់",
         "settings_sub": "គ្រប់គ្រង QR ទូទាត់ប្រាក់ ដែលបង្ហាញនៅលើវិក្កយបត្រ",
         "qr_upload_title": "QR ទូទាត់ប្រាក់ (ABA KHQR ឬធនាគារផ្សេងទៀត)",
-        "qr_upload_hint": "ជ្រើសរើសរូបភាព QR របស់អ្នក រួចអូសដើម្បីកាត់តម្រឹមឲ្យនៅសល់តែការ៉េ QR ប៉ុណ្ណោះ។ វានឹងបង្ហាញកាន់តែច្បាស់ និងស្កេនកាន់តែងាយនៅលើវិក្កយបត្រ។",
-        "qr_crop_hint": "អូសដើម្បីកាត់តម្រឹមឲ្យនៅសល់តែការ៉េ QR ប៉ុណ្ណោះ (កុំរួមបញ្ចូលផ្នែកខាងលើ ឬខាងក្រោមនៃកម្មវិធីធនាគារ)",
+        "qr_upload_hint": "ជ្រើសរើសរូបភាព QR របស់អ្នក រួចអូសដើម្បីកាត់តម្រឹមឲ្យនៅសល់តែការ៉េ QR ខ្មៅ-សខ្លះប៉ុណ្ណោះ — កុំរួមបញ្ចូលឈ្មោះធនាគារ ចំណងជើង ឬអក្សរណាមួយជុំវិញវា។ QR ដែលកាត់តឹងជាងនេះនឹងស្កេនបានងាយជាងច្រើននៅលើវិក្កយបត្រ។",
+        "qr_crop_hint": "អូសព្រំដែនឲ្យជិតបំផុតទៅនឹងគែមការ៉េខ្មៅ-ស — លុបចេញនូវផ្ទៃខាងក្រោយ ឈ្មោះធនាគារ ចំណងជើង KHQR និងអក្សរពន្យល់ខាងក្រោម។ លទ្ធផលចុងក្រោយគួរតែជាការ៉េខ្មៅ-សសុទ្ធសាធ គ្មានផ្សេងទៀត។",
         "qr_save_crop_btn": "រក្សាទុករូបភាពដែលបានកាត់តម្រឹម",
         "qr_current_label": "QR បច្ចុប្បន្ន",
         "qr_upload_btn": "បញ្ចូល QR",
@@ -380,6 +396,7 @@ TR = {
         "material_price_riel_label": "Total price (៛)",
         "add_material_toggle": "＋ Add material",
         "materials_count": "{count} materials",
+        "products_count": "{count} products",
         "actions_menu_label": "Actions",
         "close_btn": "Close",
         "supplier_contact_label": "Seller (phone)",
@@ -478,6 +495,21 @@ TR = {
         "mark_pending_btn": "Mark pending",
         "flash_payment_updated": "Payment status updated.",
 
+        # Product categories
+        "category_bread": "Bread",
+        "category_pastry": "Pastry",
+        "category_cake": "Cake",
+        "category_drink": "Drinks",
+        "category_other": "Other",
+        "product_category_label": "Category",
+
+        # Orders — two-step flow
+        "order_step1_title": "Step 1: Choose products",
+        "order_step2_title": "Step 2: Confirm order",
+        "next_step_btn": "Next",
+        "back_step_btn": "← Back to products",
+        "order_items_count": "{count} item(s)",
+
         # Invoice (matches printed invoice book style)
         "invoice_title_km": "វិក្កយបត្រ",
         "invoice_title_en": "INVOICE",
@@ -565,8 +597,8 @@ TR = {
         "settings_title": "Settings",
         "settings_sub": "Manage the payment QR code shown on invoices",
         "qr_upload_title": "Payment QR (ABA KHQR or other bank)",
-        "qr_upload_hint": "Pick your QR image, then drag to crop it down to just the QR square. It'll show up clearer and scan more easily on the invoice.",
-        "qr_crop_hint": "Drag to crop down to just the QR square (leave out the banking app's header/buttons around it)",
+        "qr_upload_hint": "Pick your QR image, then drag to crop it down to just the plain black-and-white square — leave out the bank name, header, and any text around it. A tighter crop scans much more reliably on the invoice.",
+        "qr_crop_hint": "Drag the edges as close to the black-and-white square as possible — cut out the background, bank name, the \"KHQR\" banner, and the caption text below it. What's left should be nothing but the square code.",
         "qr_save_crop_btn": "Save cropped image",
         "qr_current_label": "Current QR",
         "qr_upload_btn": "Upload QR",

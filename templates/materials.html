@@ -94,16 +94,7 @@
     });
   })();
 
-  function toggleActions(id) {
-    document.querySelectorAll('.actions-menu').forEach(function (el) {
-      if (el.id !== 'actions-' + id) el.style.display = 'none';
-    });
-    const menu = document.getElementById('actions-' + id);
-    menu.style.display = (menu.style.display === 'block') ? 'none' : 'block';
-  }
-
   function togglePanel(id) {
-    document.querySelectorAll('.actions-menu').forEach(function (el) { el.style.display = 'none'; });
     const group = id.split('-')[1];
     document.querySelectorAll('.material-panel[data-group="' + group + '"]').forEach(function (el) {
       if (el.id !== id) el.style.display = 'none';
@@ -111,51 +102,44 @@
     const panel = document.getElementById(id);
     panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
   }
-
-  document.addEventListener('click', function (e) {
-    if (!e.target.closest('.actions-cell')) {
-      document.querySelectorAll('.actions-menu').forEach(function (el) { el.style.display = 'none'; });
-    }
-  });
 </script>
 
 <div class="section">
   {% if materials %}
-  <div class="material-list">
-    <div class="material-list-head">
-      <span>{{ t('name') }}</span>
-      <span>{{ t('stock_qty_col') }}</span>
-      <span>{{ t('cost_unit_col') }}</span>
-      <span>{{ t('status_col') }}</span>
-      <span></span>
-    </div>
-    {% for m in materials %}
-    <div class="material-list-row">
-      <span class="ml-name">{{ m.name }}</span>
-      <span class="mono">{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }}</span>
-      <span class="mono">${{ '%.2f'|format(m.cost_per_unit) }}</span>
-      <span>
-        {% if m.stock_qty <= 0 %}
-          <span class="badge low">{{ t('low_badge') }}</span>
-        {% else %}
-          <span class="badge ok">{{ t('ok_badge') }}</span>
-        {% endif %}
-      </span>
-      <span class="actions-cell">
-        <button type="button" class="dots-btn" aria-label="{{ t('actions_menu_label') }}" onclick="toggleActions({{ m.id }})">⋯</button>
-        <div class="actions-menu" id="actions-{{ m.id }}">
-          <button type="button" onclick="togglePanel('restock-{{ m.id }}'); toggleActions({{ m.id }});">{{ t('restock_btn_action') }}</button>
-          <button type="button" onclick="togglePanel('edit-{{ m.id }}'); toggleActions({{ m.id }});">{{ t('edit_btn') }}</button>
-          <button type="button" onclick="togglePanel('history-{{ m.id }}'); toggleActions({{ m.id }});">{{ t('history_btn') }}</button>
-          <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');">
-            <button type="submit" class="danger-item">{{ t('delete_btn') }}</button>
-          </form>
+  {% for m in materials %}
+  <div class="card material-card">
+    <div class="material-card-head">
+      <div>
+        <div class="material-card-name">
+          <h3 style="margin:0;">{{ m.name }}</h3>
+          {% if m.stock_qty <= 0 %}
+            <span class="badge low">{{ t('low_badge') }}</span>
+          {% else %}
+            <span class="badge ok">{{ t('ok_badge') }}</span>
+          {% endif %}
         </div>
-      </span>
+        <div class="material-stat-line mono">
+          <span class="stat-label">{{ t('stock_qty_col') }}:</span>{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }}
+          <span class="sep">·</span>
+          <span class="stat-label">{{ t('cost_unit_col') }}:</span>${{ '%.2f'|format(m.cost_per_unit) }}
+        </div>
+        {% if m.supplier_name %}
+        <div class="material-card-sub">{{ t('supplier_col') }}: {{ m.supplier_name }}{% if m.supplier_contact %} ({{ m.supplier_contact }}){% endif %}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="material-card-actions">
+      <button type="button" class="btn secondary btn-sm" onclick="togglePanel('restock-{{ m.id }}')">{{ t('restock_btn_action') }}</button>
+      <button type="button" class="btn secondary btn-sm" onclick="togglePanel('edit-{{ m.id }}')">{{ t('edit_btn') }}</button>
+      <button type="button" class="btn secondary btn-sm" onclick="togglePanel('history-{{ m.id }}')">{{ t('history_btn') }}</button>
+      <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');">
+        <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
+      </form>
     </div>
 
     <div id="restock-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
-      <form method="POST" action="{{ url_for('restock_material', material_id=m.id) }}" class="form-grid panel-form">
+      <form method="POST" action="{{ url_for('restock_material', material_id=m.id) }}" class="form-grid">
         <div class="field">
           <label>{{ t('restock_qty_label') }}</label>
           <input type="number" step="any" name="qty" placeholder="0" required>
@@ -181,7 +165,7 @@
     </div>
 
     <div id="edit-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
-      <form method="POST" action="{{ url_for('edit_material', material_id=m.id) }}" class="form-grid panel-form">
+      <form method="POST" action="{{ url_for('edit_material', material_id=m.id) }}" class="form-grid">
         <div class="field">
           <label>{{ t('name') }}</label>
           <input type="text" name="name" value="{{ m.name }}" required>
@@ -258,8 +242,8 @@
       <div class="empty-state">{{ t('history_empty') }}</div>
       {% endif %}
     </div>
-    {% endfor %}
   </div>
+  {% endfor %}
   {% else %}
   <div class="empty-state">{{ t('no_materials_yet') }}</div>
   {% endif %}

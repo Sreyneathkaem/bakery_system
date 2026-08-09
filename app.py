@@ -48,6 +48,23 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 APP_TZ = ZoneInfo("Asia/Phnom_Penh")
 PG_TIMEZONE_NAME = "Asia/Phnom_Penh"
 
+# Cache-busting for static files (CSS/JS). Browsers aggressively cache
+# /static/css/main.css since the filename never changes between deploys —
+# without this, people can keep seeing an old stylesheet (unstyled-looking
+# pages, missing new layout) after an update until they manually hard-
+# refresh. Appending ?v=<mtime> to the link changes the URL whenever the
+# file's contents actually change, so the browser fetches a fresh copy
+# automatically on the next visit after a deploy.
+try:
+    ASSET_VERSION = str(int(os.path.getmtime(os.path.join(BASE_DIR, "static", "css", "main.css"))))
+except OSError:
+    ASSET_VERSION = "1"
+
+
+@app.context_processor
+def inject_asset_version():
+    return {"asset_version": ASSET_VERSION}
+
 
 def now_local():
     """Current time in the shop's own timezone (Asia/Phnom_Penh)."""
@@ -148,6 +165,8 @@ def migrate_db():
         cur.execute("ALTER TABLE orders ADD COLUMN created_by_email TEXT")
     if not column_exists("orders", "payment_status"):
         cur.execute("ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'pending'")
+    if not column_exists("products", "category"):
+        cur.execute("ALTER TABLE products ADD COLUMN category TEXT NOT NULL DEFAULT 'other'")
     if not column_exists("materials", "supplier_name"):
         cur.execute("ALTER TABLE materials ADD COLUMN supplier_name TEXT")
     if not column_exists("materials", "supplier_contact"):
@@ -342,6 +361,11 @@ def set_lang(code):
 
 # How long "keep me signed in" lasts before needing to log in again.
 REMEMBER_ME_DAYS = 30
+
+# Fixed product categories, in the display order they should appear on the
+# Orders page. Anything uncategorized (or from before this feature existed)
+# falls back to "other".
+PRODUCT_CATEGORIES = ["bread", "pastry", "cake", "drink", "other"]
 
 
 def supabase_auth_request(path, payload):
@@ -708,6 +732,9 @@ def add_product():
     name = request.form.get("name", "").strip()
     price_usd_raw = request.form.get("price_usd", "").strip()
     price_riel_raw = request.form.get("price_riel", "").strip()
+    category = request.form.get("category", "other").strip()
+    if category not in PRODUCT_CATEGORIES:
+        category = "other"
 
     if not name:
         flash(g.t("flash_product_name_required"), "error")
@@ -721,7 +748,7 @@ def add_product():
         price = 0.0
 
     try:
-        db.execute("INSERT INTO products (name, price) VALUES (?, ?)", (name, price))
+        db.execute("INSERT INTO products (name, price, category) VALUES (?, ?, ?)", (name, price, category))
         db.commit()
         flash(g.t("flash_product_added", name=name), "success")
     except psycopg2.IntegrityError:
@@ -803,6 +830,19 @@ def orders():
         "SELECT * FROM products WHERE active = 1 ORDER BY name ASC"
     ).fetchall()
 
+    # Group products by category, in a fixed display order, for the Orders
+    # page's tap-to-add grid — this is presentation-only grouping, done here
+    # rather than in SQL so the category order stays exactly PRODUCT_CATEGORIES
+    # regardless of how products were inserted.
+    products_by_category = {c: [] for c in PRODUCT_CATEGORIES}
+    for p in active_products:
+        cat = p["category"] if p["category"] in PRODUCT_CATEGORIES else "other"
+        products_by_category[cat].append(p)
+    grouped_products = [
+        {"key": c, "label_key": f"category_{c}", "products": products_by_category[c]}
+        for c in PRODUCT_CATEGORIES if products_by_category[c]
+    ]
+
     recent = db.execute(
         "SELECT * FROM orders ORDER BY ordered_at DESC LIMIT 30"
     ).fetchall()
@@ -817,7 +857,12 @@ def orders():
         items_text = ", ".join(f'{it["product_name"]} x{it["quantity"]}' for it in items)
         order_summaries.append({"order": o, "items_text": items_text})
 
-    return render_template("orders.html", products=active_products, orders=order_summaries)
+    return render_template(
+        "orders.html",
+        products=active_products,
+        grouped_products=grouped_products,
+        orders=order_summaries,
+    )
 
 
 def parse_order_form_lines(form):

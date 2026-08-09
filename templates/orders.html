@@ -11,75 +11,87 @@
 
 <div class="section">
   <div class="card">
-    <h3>{{ t('new_order_title') }}</h3>
     {% if products %}
-    <p class="tap-hint">{{ t('tap_to_add_hint') }}</p>
 
-    <div class="product-tap-grid" id="product-tap-grid">
-      {% for p in products %}
-      <div class="product-tap-card" data-id="{{ p.id }}" data-name="{{ p.name }}" data-price="{{ p.price }}">
-        <span class="ptc-qty-badge" style="display:none;">0</span>
-        <div class="ptc-name">{{ p.name }}</div>
-        <div class="ptc-price mono">${{ '%.2f'|format(p.price) }}</div>
+    <!-- STEP 1: pick products, grouped by category -->
+    <div id="order-step-1">
+      <h3>{{ t('order_step1_title') }}</h3>
+      <p class="tap-hint">{{ t('tap_to_add_hint') }}</p>
+
+      {% for group in grouped_products %}
+      <h4 class="recipe-subhead">{{ t(group.label_key) }}</h4>
+      <div class="product-tap-grid">
+        {% for p in group.products %}
+        <div class="product-tap-card" data-id="{{ p.id }}" data-name="{{ p.name }}" data-price="{{ p.price }}">
+          <span class="ptc-qty-badge" style="display:none;">0</span>
+          <div class="ptc-name">{{ p.name }}</div>
+          <div class="ptc-price mono">${{ '%.2f'|format(p.price) }}</div>
+        </div>
+        {% endfor %}
       </div>
       {% endfor %}
-    </div>
 
-    <div class="order-summary-bar">
-      <div class="order-summary-head">
-        <strong>{{ t('your_order_label') }}</strong>
-        <button type="button" class="secondary btn-sm" id="clear-order-btn" style="display:none;">{{ t('clear_order_btn') }}</button>
-      </div>
-      <div id="order-summary-lines">
-        <p class="field-hint" id="empty-order-hint" style="margin:6px 0;">{{ t('empty_order_hint') }}</p>
-      </div>
-      <div class="order-summary-total" id="order-summary-total" style="display:none;">
-        <span>{{ t('order_total_col') }}</span>
-        <span class="mono">$<span id="order-summary-total-value">0.00</span></span>
+      <div class="step1-footer">
+        <span class="field-hint" id="step1-hint">{{ t('empty_order_hint') }}</span>
+        <button type="button" id="next-step-btn" disabled>{{ t('next_step_btn') }} →</button>
       </div>
     </div>
 
-    <form method="POST" action="{{ url_for('add_order') }}" id="order-form">
-      <div id="hidden-line-inputs"></div>
+    <!-- STEP 2: review cart, customer info, confirm -->
+    <div id="order-step-2" style="display:none;">
+      <button type="button" class="order-details-toggle" id="back-to-step1-btn">{{ t('back_step_btn') }}</button>
+      <h3>{{ t('order_step2_title') }}</h3>
 
-      <button type="button" class="order-details-toggle" id="toggle-customer-info">{{ t('add_customer_info_btn') }} ＋</button>
-      <div class="form-row" id="customer-info-fields" style="display:none; margin-top:10px; margin-bottom:6px;">
-        <div class="field">
-          <label for="customer_name">{{ t('customer_name_label') }}</label>
-          <input type="text" id="customer_name" name="customer_name" placeholder="{{ t('customer_name_ph') }}" style="width:200px">
+      <div class="order-summary-bar">
+        <div class="order-summary-head">
+          <strong>{{ t('your_order_label') }}</strong>
+          <button type="button" class="secondary btn-sm" id="clear-order-btn">{{ t('clear_order_btn') }}</button>
         </div>
-        <div class="field">
-          <label for="customer_phone">{{ t('customer_phone_label') }}</label>
-          <input type="text" id="customer_phone" name="customer_phone" placeholder="{{ t('customer_phone_ph') }}" style="width:160px">
-        </div>
-        <div class="field">
-          <label for="customer_address">{{ t('customer_address_label') }}</label>
-          <input type="text" id="customer_address" name="customer_address" placeholder="{{ t('customer_address_ph') }}" style="width:200px">
-        </div>
-        <div class="field">
-          <label for="note">{{ t('order_note_label') }}</label>
-          <input type="text" id="note" name="note" placeholder="{{ t('order_note_ph') }}" style="width:200px">
+        <div id="order-summary-lines"></div>
+        <div class="order-summary-total">
+          <span>{{ t('order_total_col') }}</span>
+          <span class="mono">$<span id="order-summary-total-value">0.00</span></span>
         </div>
       </div>
 
-      <div class="form-row" style="margin-top:14px;">
-        <button type="submit" id="submit-order-btn" disabled>{{ t('submit_order_btn') }}</button>
-      </div>
-    </form>
+      <form method="POST" action="{{ url_for('add_order') }}" id="order-form">
+        <div id="hidden-line-inputs"></div>
+        <div class="form-row" style="margin-top:14px;">
+          <div class="field">
+            <label for="customer_name">{{ t('customer_name_label') }}</label>
+            <input type="text" id="customer_name" name="customer_name" placeholder="{{ t('customer_name_ph') }}" style="width:200px">
+          </div>
+          <div class="field">
+            <label for="customer_phone">{{ t('customer_phone_label') }}</label>
+            <input type="text" id="customer_phone" name="customer_phone" placeholder="{{ t('customer_phone_ph') }}" style="width:160px">
+          </div>
+          <div class="field">
+            <label for="customer_address">{{ t('customer_address_label') }}</label>
+            <input type="text" id="customer_address" name="customer_address" placeholder="{{ t('customer_address_ph') }}" style="width:200px">
+          </div>
+          <div class="field">
+            <label for="note">{{ t('order_note_label') }}</label>
+            <input type="text" id="note" name="note" placeholder="{{ t('order_note_ph') }}" style="width:200px">
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:14px;">
+          <button type="submit" id="submit-order-btn">{{ t('submit_order_btn') }}</button>
+        </div>
+      </form>
+    </div>
 
     <script>
       (function () {
-        const grid = document.getElementById('product-tap-grid');
-        const cards = Array.from(grid.querySelectorAll('.product-tap-card'));
+        const cards = Array.from(document.querySelectorAll('.product-tap-card'));
+        const step1 = document.getElementById('order-step-1');
+        const step2 = document.getElementById('order-step-2');
+        const nextBtn = document.getElementById('next-step-btn');
+        const backBtn = document.getElementById('back-to-step1-btn');
+        const clearBtn = document.getElementById('clear-order-btn');
+        const step1Hint = document.getElementById('step1-hint');
         const summaryLines = document.getElementById('order-summary-lines');
-        const emptyHint = document.getElementById('empty-order-hint');
-        const totalWrap = document.getElementById('order-summary-total');
         const totalValueEl = document.getElementById('order-summary-total-value');
         const hiddenInputsWrap = document.getElementById('hidden-line-inputs');
-        const submitBtn = document.getElementById('submit-order-btn');
-        const clearBtn = document.getElementById('clear-order-btn');
-        const toggleCustomerBtn = document.getElementById('toggle-customer-info');
-        const customerFields = document.getElementById('customer-info-fields');
 
         const cart = {}; // product_id -> qty
 
@@ -90,39 +102,26 @@
 
         function render() {
           const ids = Object.keys(cart);
+          const itemCount = ids.reduce((sum, id) => sum + cart[id], 0);
 
           cards.forEach(function (card) {
             const id = card.dataset.id;
             const badge = card.querySelector('.ptc-qty-badge');
             const qty = cart[id] || 0;
-            if (qty > 0) {
-              card.classList.add('has-qty');
-              badge.style.display = 'flex';
-              badge.textContent = qty;
-            } else {
-              card.classList.remove('has-qty');
-              badge.style.display = 'none';
-            }
+            card.classList.toggle('has-qty', qty > 0);
+            badge.style.display = qty > 0 ? 'flex' : 'none';
+            badge.textContent = qty;
           });
+
+          nextBtn.disabled = ids.length === 0;
+          step1Hint.textContent = ids.length === 0
+            ? "{{ t('empty_order_hint') }}"
+            : "{{ t('order_items_count', count='__N__') }}".replace('__N__', itemCount);
 
           summaryLines.innerHTML = '';
           hiddenInputsWrap.innerHTML = '';
-
-          if (ids.length === 0) {
-            emptyHint.style.display = 'block';
-            summaryLines.appendChild(emptyHint);
-            totalWrap.style.display = 'none';
-            submitBtn.disabled = true;
-            clearBtn.style.display = 'none';
-            return;
-          }
-
-          emptyHint.style.display = 'none';
-          totalWrap.style.display = 'flex';
-          submitBtn.disabled = false;
-          clearBtn.style.display = 'inline-block';
-
           let total = 0;
+
           ids.forEach(function (id) {
             const card = cards.find(function (c) { return c.dataset.id === id; });
             const qty = cart[id];
@@ -155,6 +154,19 @@
           });
 
           totalValueEl.textContent = total.toFixed(2);
+
+          // If everything got removed while on step 2 (all quantities
+          // dropped to zero), send the person back to picking products
+          // instead of leaving them on an empty confirm screen.
+          if (ids.length === 0 && step2.style.display !== 'none') {
+            goToStep(1);
+          }
+        }
+
+        function goToStep(n) {
+          step1.style.display = n === 1 ? 'block' : 'none';
+          step2.style.display = n === 2 ? 'block' : 'none';
+          if (n === 2) { window.scrollTo({ top: step2.offsetTop - 80, behavior: 'smooth' }); }
         }
 
         cards.forEach(function (card) {
@@ -164,14 +176,12 @@
           });
         });
 
+        nextBtn.addEventListener('click', function () { if (!nextBtn.disabled) goToStep(2); });
+        backBtn.addEventListener('click', function () { goToStep(1); });
         clearBtn.addEventListener('click', function () {
           Object.keys(cart).forEach(function (id) { delete cart[id]; });
           render();
-        });
-
-        toggleCustomerBtn.addEventListener('click', function () {
-          const isHidden = customerFields.style.display === 'none';
-          customerFields.style.display = isHidden ? 'flex' : 'none';
+          goToStep(1);
         });
 
         render();
@@ -191,54 +201,63 @@
     {% endif %}
   </div>
   {% if orders %}
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>{{ t('customer') }}</th>
-          <th>{{ t('items_col') }}</th>
-          <th class="num">{{ t('total') }}</th>
-          <th class="num">{{ t('profit') }}</th>
-          <th>{{ t('payment_status_col') }}</th>
-          <th>{{ t('when') }}</th>
-          <th></th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for entry in orders %}
-        <tr>
-          <td>{{ entry.order.customer_name or t('walk_in_customer') }}</td>
-          <td>{{ entry.items_text }}</td>
-          <td class="num mono">${{ '%.2f'|format(entry.order.total_amount) }}</td>
-          <td class="num mono">${{ '%.2f'|format(entry.order.total_profit) }}</td>
-          <td>
-            <form method="POST" action="{{ url_for('toggle_payment_status', order_id=entry.order.id) }}" class="inline-form">
-              <button type="submit" class="payment-toggle-btn" title="{{ t('mark_paid_btn') if entry.order.payment_status != 'paid' else t('mark_pending_btn') }}">
-                {% if entry.order.payment_status == 'paid' %}
-                <span class="badge paid">{{ t('payment_paid') }}</span>
-                {% else %}
-                <span class="badge pending">{{ t('payment_pending') }}</span>
-                {% endif %}
-              </button>
-            </form>
-          </td>
-          <td>{{ entry.order.ordered_at.strftime('%Y-%m-%d %H:%M') }}</td>
-          <td><a href="{{ url_for('order_invoice', order_id=entry.order.id) }}" class="btn secondary btn-sm">{{ t('invoice_link') }}</a></td>
-          <td>
-            <a href="{{ url_for('edit_order', order_id=entry.order.id) }}" class="btn secondary btn-sm">{{ t('edit_link') }}</a>
-            <form method="POST" action="{{ url_for('delete_order', order_id=entry.order.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_order') }}');">
-              <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="product-list">
+    {% for entry in orders %}
+    <div class="product-row" onclick="toggleOrderDetail({{ entry.order.id }})">
+      <div class="product-row-main">
+        <div class="product-row-name">{{ entry.order.customer_name or t('walk_in_customer') }}</div>
+        <div class="product-row-sub">{{ entry.items_text }} &nbsp;·&nbsp; {{ entry.order.ordered_at.strftime('%m-%d %H:%M') }}</div>
+      </div>
+      <div class="product-row-right">
+        <form method="POST" action="{{ url_for('toggle_payment_status', order_id=entry.order.id) }}" class="inline-form" onclick="event.stopPropagation();">
+          <button type="submit" class="payment-toggle-btn">
+            {% if entry.order.payment_status == 'paid' %}
+            <span class="badge paid">{{ t('payment_paid') }}</span>
+            {% else %}
+            <span class="badge pending">{{ t('payment_pending') }}</span>
+            {% endif %}
+          </button>
+        </form>
+        <span class="product-row-price mono">${{ '%.2f'|format(entry.order.total_amount) }}</span>
+        <span class="product-row-chevron" id="chevron-order-{{ entry.order.id }}">›</span>
+      </div>
+    </div>
+
+    <div class="product-detail-panel" id="detail-order-{{ entry.order.id }}" style="display:none;">
+      <div class="material-stat-line mono" style="padding-top:14px;">
+        <span class="stat-label">{{ t('cost_col') }}:</span>${{ '%.2f'|format(entry.order.total_cost) }}
+        <span class="sep">·</span>
+        <span class="stat-label">{{ t('profit') }}:</span>${{ '%.2f'|format(entry.order.total_profit) }}
+      </div>
+      <div class="material-card-actions">
+        <a href="{{ url_for('order_invoice', order_id=entry.order.id) }}" class="btn secondary btn-sm">{{ t('invoice_link') }}</a>
+        <a href="{{ url_for('edit_order', order_id=entry.order.id) }}" class="btn secondary btn-sm">{{ t('edit_link') }}</a>
+        <form method="POST" action="{{ url_for('delete_order', order_id=entry.order.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_order') }}');">
+          <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
   </div>
   {% else %}
   <div class="empty-state">{{ t('no_orders_logged') }}</div>
   {% endif %}
 </div>
+
+<script>
+  function toggleOrderDetail(id) {
+    document.querySelectorAll('.product-detail-panel').forEach(function (el) {
+      if (el.id !== 'detail-order-' + id) el.style.display = 'none';
+    });
+    document.querySelectorAll('.product-row-chevron').forEach(function (el) {
+      if (el.id !== 'chevron-order-' + id) el.classList.remove('open');
+    });
+    const panel = document.getElementById('detail-order-' + id);
+    const chevron = document.getElementById('chevron-order-' + id);
+    const isOpen = panel.style.display === 'block';
+    panel.style.display = isOpen ? 'none' : 'block';
+    chevron.classList.toggle('open', !isOpen);
+  }
+</script>
 
 {% endblock %}
