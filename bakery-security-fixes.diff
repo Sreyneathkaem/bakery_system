@@ -1,0 +1,295 @@
+diff --git a/app.py b/app.py
+index 5836346..cabca1e 100644
+--- a/app.py
++++ b/app.py
+@@ -11,6 +11,9 @@ import psycopg2
+ import psycopg2.extras
+ import requests
+ from flask import Flask, render_template, request, redirect, url_for, session, g, flash, jsonify, send_file
++from flask_wtf.csrf import CSRFProtect, CSRFError
++from flask_limiter import Limiter
++from flask_limiter.util import get_remote_address
+ from werkzeug.utils import secure_filename
+ 
+ from translations import get_translator, DEFAULT_LANG
+@@ -28,7 +31,40 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+ SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+ 
+ app = Flask(__name__)
+-app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key-in-production")
++
++# The session cookie is signed with this key — it's what actually keeps
++# someone logged in (login_required only checks the session, it doesn't
++# re-verify with Supabase on every request). A guessable fallback here means
++# anyone can forge a valid "logged in" cookie, so we fail loudly at startup
++# instead of silently running with a known-insecure default.
++try:
++    app.secret_key = os.environ["SECRET_KEY"]
++except KeyError:
++    raise RuntimeError(
++        "SECRET_KEY environment variable is not set. Set it to a long random "
++        "string before starting the app (see README.md / docker-compose.yml)."
++    )
++
++# Hard cap on request body size (covers the QR image upload) so a huge file
++# can't be pushed straight into the database as base64.
++app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB
++
++csrf = CSRFProtect(app)
++
++limiter = Limiter(get_remote_address, app=app, storage_uri="memory://", default_limits=[])
++
++
++@app.errorhandler(CSRFError)
++def handle_csrf_error(e):
++    flash("Your session expired — please try that again.", "error")
++    return redirect(request.referrer or url_for("dashboard"))
++
++
++@app.errorhandler(413)
++def handle_too_large(e):
++    flash("That file is too large (5MB max).", "error")
++    return redirect(request.referrer or url_for("dashboard"))
++
+ 
+ # Shown on invoices. Set these in your hosting provider's environment settings.
+ SHOP_NAME = os.environ.get("SHOP_NAME", "ពងទាប្រៃបេកខេរី")
+@@ -395,6 +431,7 @@ def login_required(view):
+ 
+ 
+ @app.route("/login", methods=["GET", "POST"])
++@limiter.limit("10 per minute")
+ def login():
+     if request.method == "POST":
+         email = request.form.get("email", "").strip()
+@@ -1304,7 +1341,8 @@ if __name__ == "__main__":
+     app.permanent_session_lifetime = timedelta(days=REMEMBER_ME_DAYS)
+     init_db()
+     migrate_db()
+-    app.run(host="0.0.0.0", port=5000, debug=True)
++    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
++    app.run(host="0.0.0.0", port=5000, debug=debug_mode)
+ else:
+     app.permanent_session_lifetime = timedelta(days=REMEMBER_ME_DAYS)
+     init_db()
+diff --git a/requirements.txt b/requirements.txt
+index f4de762..556c599 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -3,3 +3,5 @@ Werkzeug==3.0.3
+ gunicorn==22.0.0
+ psycopg2-binary==2.9.9
+ requests==2.32.3
++Flask-WTF==1.2.1
++Flask-Limiter==3.8.0
+diff --git a/templates/base.html b/templates/base.html
+index 70599b3..3eb3ff8 100644
+--- a/templates/base.html
++++ b/templates/base.html
+@@ -12,6 +12,7 @@
+   <meta name="mobile-web-app-capable" content="yes">
+   <meta name="apple-mobile-web-app-capable" content="yes">
+   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
++  <meta name="csrf-token" content="{{ csrf_token() }}">
+ </head>
+ <body>
+   <header class="app-header">
+diff --git a/templates/edit_order.html b/templates/edit_order.html
+index 38444e1..9dce6a9 100644
+--- a/templates/edit_order.html
++++ b/templates/edit_order.html
+@@ -12,7 +12,7 @@
+ <div class="section">
+   <div class="card">
+     {% if products %}
+-    <form method="POST" action="{{ url_for('edit_order', order_id=order.id) }}" id="order-form">
++    <form method="POST" action="{{ url_for('edit_order', order_id=order.id) }}" id="order-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+       <div class="form-row" style="margin-bottom:14px;">
+         <div class="field">
+           <label for="customer_name">{{ t('customer_name_label') }}</label>
+diff --git a/templates/invoice.html b/templates/invoice.html
+index 6a6ce4d..e9cca47 100644
+--- a/templates/invoice.html
++++ b/templates/invoice.html
+@@ -12,7 +12,7 @@
+ </div>
+ 
+ <div class="section no-print" style="max-width:600px; margin:0 auto 16px; display:flex; align-items:center; justify-content:space-between;">
+-  <form method="POST" action="{{ url_for('toggle_payment_status', order_id=order.id) }}">
++  <form method="POST" action="{{ url_for('toggle_payment_status', order_id=order.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+     <button type="submit" class="payment-toggle-btn">
+       {% if order.payment_status == 'paid' %}
+       <span class="badge paid" style="font-size:0.9rem; padding:6px 14px;">{{ t('payment_paid') }}</span>
+@@ -203,7 +203,10 @@
+         const dataUrl = canvas.toDataURL('image/png');
+         const resp = await fetch("{{ url_for('send_order_telegram_image', order_id=order.id) }}", {
+           method: 'POST',
+-          headers: { 'Content-Type': 'application/json' },
++          headers: {
++            'Content-Type': 'application/json',
++            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content,
++          },
+           body: JSON.stringify({ image: dataUrl }),
+         });
+         const result = await resp.json();
+diff --git a/templates/login.html b/templates/login.html
+index 172884b..c0f22a7 100644
+--- a/templates/login.html
++++ b/templates/login.html
+@@ -30,7 +30,7 @@
+         {% endif %}
+       {% endwith %}
+ 
+-      <form method="POST">
++      <form method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+         <input type="email" name="email" placeholder="{{ t('login_email_placeholder') }}" autofocus required>
+         <input type="password" name="password" placeholder="{{ t('login_placeholder') }}" required>
+         <label class="login-remember-row">
+diff --git a/templates/materials.html b/templates/materials.html
+index f15c5e6..7c1107e 100644
+--- a/templates/materials.html
++++ b/templates/materials.html
+@@ -16,7 +16,7 @@
+   </div>
+ 
+   <div class="card" id="add-form-card" style="display:none;">
+-    <form method="POST" action="{{ url_for('add_material') }}" class="form-grid">
++    <form method="POST" action="{{ url_for('add_material') }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+       <div class="field">
+         <label for="name">{{ t('name') }}</label>
+         <input type="text" id="name" name="name" placeholder="{{ t('material_name_ph') }}" required>
+@@ -133,13 +133,13 @@
+       <button type="button" class="btn secondary btn-sm" onclick="togglePanel('restock-{{ m.id }}')">{{ t('restock_btn_action') }}</button>
+       <button type="button" class="btn secondary btn-sm" onclick="togglePanel('edit-{{ m.id }}')">{{ t('edit_btn') }}</button>
+       <button type="button" class="btn secondary btn-sm" onclick="togglePanel('history-{{ m.id }}')">{{ t('history_btn') }}</button>
+-      <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');">
++      <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+         <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
+       </form>
+     </div>
+ 
+     <div id="restock-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
+-      <form method="POST" action="{{ url_for('restock_material', material_id=m.id) }}" class="form-grid">
++      <form method="POST" action="{{ url_for('restock_material', material_id=m.id) }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+         <div class="field">
+           <label>{{ t('restock_qty_label') }}</label>
+           <input type="number" step="any" name="qty" placeholder="0" required>
+@@ -165,7 +165,7 @@
+     </div>
+ 
+     <div id="edit-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
+-      <form method="POST" action="{{ url_for('edit_material', material_id=m.id) }}" class="form-grid">
++      <form method="POST" action="{{ url_for('edit_material', material_id=m.id) }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+         <div class="field">
+           <label>{{ t('name') }}</label>
+           <input type="text" name="name" value="{{ m.name }}" required>
+diff --git a/templates/orders.html b/templates/orders.html
+index 7f07c36..2f92aed 100644
+--- a/templates/orders.html
++++ b/templates/orders.html
+@@ -54,7 +54,7 @@
+         </div>
+       </div>
+ 
+-      <form method="POST" action="{{ url_for('add_order') }}" id="order-form">
++      <form method="POST" action="{{ url_for('add_order') }}" id="order-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+         <div id="hidden-line-inputs"></div>
+         <div class="form-row" style="margin-top:14px;">
+           <div class="field">
+@@ -209,7 +209,7 @@
+         <div class="product-row-sub">{{ entry.items_text }} &nbsp;·&nbsp; {{ entry.order.ordered_at.strftime('%m-%d %H:%M') }}</div>
+       </div>
+       <div class="product-row-right">
+-        <form method="POST" action="{{ url_for('toggle_payment_status', order_id=entry.order.id) }}" class="inline-form" onclick="event.stopPropagation();">
++        <form method="POST" action="{{ url_for('toggle_payment_status', order_id=entry.order.id) }}" class="inline-form" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+           <button type="submit" class="payment-toggle-btn">
+             {% if entry.order.payment_status == 'paid' %}
+             <span class="badge paid">{{ t('payment_paid') }}</span>
+@@ -232,7 +232,7 @@
+       <div class="material-card-actions">
+         <a href="{{ url_for('order_invoice', order_id=entry.order.id) }}" class="btn secondary btn-sm">{{ t('invoice_link') }}</a>
+         <a href="{{ url_for('edit_order', order_id=entry.order.id) }}" class="btn secondary btn-sm">{{ t('edit_link') }}</a>
+-        <form method="POST" action="{{ url_for('delete_order', order_id=entry.order.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_order') }}');">
++        <form method="POST" action="{{ url_for('delete_order', order_id=entry.order.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_order') }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+           <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
+         </form>
+       </div>
+diff --git a/templates/products.html b/templates/products.html
+index 9214336..f913180 100644
+--- a/templates/products.html
++++ b/templates/products.html
+@@ -16,7 +16,7 @@
+   </div>
+ 
+   <div class="card" id="add-form-card" style="display:none; margin-bottom:16px;">
+-    <form method="POST" action="{{ url_for('add_product') }}" class="form-grid">
++    <form method="POST" action="{{ url_for('add_product') }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+       <div class="field">
+         <label for="name">{{ t('name') }}</label>
+         <input type="text" id="name" name="name" placeholder="{{ t('product_name_ph') }}" required>
+@@ -140,7 +140,7 @@
+           <span class="stat-label">{{ t('can_make_now') }}:</span><span class="{{ 'margin-neg' if item.max_producible == 0 else '' }}">{{ item.max_producible }}</span>
+           {% endif %}
+         </div>
+-        <form method="POST" action="{{ url_for('delete_product', product_id=item.product.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_product', name=item.product.name) }}');">
++        <form method="POST" action="{{ url_for('delete_product', product_id=item.product.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_product', name=item.product.name) }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+           <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
+         </form>
+       </div>
+@@ -162,7 +162,7 @@
+         <span class="recipe-chip recipe-chip-editable" onclick="event.stopPropagation(); fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.batch_qty }}, {{ r.yield_count }})">
+           {{ r.batch_qty|round(3) }}{{ r.unit }} {{ r.material_name }} {{ t('makes_label') }} {{ r.yield_count|round(0)|int }} {{ t('loaves_unit') }}
+           <span class="chip-sub">({{ r.quantity_per_unit|round(4) }}{{ r.unit }}{{ t('per_unit_suffix') }})</span>
+-          <form method="POST" action="{{ url_for('remove_recipe_ingredient', ingredient_id=r.id) }}" class="inline-form" onclick="event.stopPropagation();">
++          <form method="POST" action="{{ url_for('remove_recipe_ingredient', ingredient_id=r.id) }}" class="inline-form" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+             <button type="submit" title="{{ t('delete_btn') }}">&times;</button>
+           </form>
+         </span>
+@@ -171,7 +171,7 @@
+         {% endfor %}
+       </div>
+ 
+-      <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="form-grid recipe-form" id="recipe-form-{{ item.product.id }}" onclick="event.stopPropagation();">
++      <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="form-grid recipe-form" id="recipe-form-{{ item.product.id }}" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+         <div class="field">
+           <label>{{ t('material_col') }}</label>
+           <select name="material_id" id="recipe-material-{{ item.product.id }}" required>
+diff --git a/templates/reports.html b/templates/reports.html
+index fdc8e35..54b0250 100644
+--- a/templates/reports.html
++++ b/templates/reports.html
+@@ -92,7 +92,7 @@
+   <div class="card">
+     <h3>{{ t('log_expense_title') }}</h3>
+     <p style="color:#8A7A63; font-size:0.88rem; margin-top:-8px;">{{ t('log_expense_sub') }}</p>
+-    <form method="POST" action="{{ url_for('add_expense') }}" class="form-row" id="expense-form">
++    <form method="POST" action="{{ url_for('add_expense') }}" class="form-row" id="expense-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+       <div class="field">
+         <label for="category">{{ t('category_label') }}</label>
+         <input type="text" id="category" name="category" placeholder="{{ t('category_ph') }}" required>
+diff --git a/templates/settings.html b/templates/settings.html
+index 030464c..3cfc370 100644
+--- a/templates/settings.html
++++ b/templates/settings.html
+@@ -23,7 +23,7 @@
+         <div class="invoice-field-label" style="margin-bottom:6px;">{{ t('qr_current_label') }}</div>
+         <img src="{{ url_for('payment_qr_image') }}" alt="Payment QR" class="qr-preview-img">
+       </div>
+-      <form method="POST" action="{{ url_for('delete_qr') }}" onsubmit="return confirm('{{ t('confirm_delete_qr') }}');">
++      <form method="POST" action="{{ url_for('delete_qr') }}" onsubmit="return confirm('{{ t('confirm_delete_qr') }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+         <button type="submit" class="danger-btn">{{ t('qr_delete_btn') }}</button>
+       </form>
+     </div>
+@@ -91,7 +91,11 @@
+       canvas.toBlob(function (blob) {
+         const formData = new FormData();
+         formData.append('qr_image', blob, 'payment_qr.png');
+-        fetch("{{ url_for('upload_qr') }}", { method: 'POST', body: formData })
++        fetch("{{ url_for('upload_qr') }}", {
++          method: 'POST',
++          headers: { 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content },
++          body: formData,
++        })
+           .then(function () { window.location.href = "{{ url_for('settings') }}"; })
+           .catch(function () { statusEl.textContent = '{{ t("qr_upload_invalid") }}'; });
+       }, 'image/png');

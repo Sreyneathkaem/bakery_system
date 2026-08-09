@@ -16,7 +16,7 @@
   </div>
 
   <div class="card" id="add-form-card" style="display:none;">
-    <form method="POST" action="{{ url_for('add_material') }}" class="form-grid">
+    <form method="POST" action="{{ url_for('add_material') }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="name">{{ t('name') }}</label>
         <input type="text" id="name" name="name" placeholder="{{ t('material_name_ph') }}" required>
@@ -133,13 +133,13 @@
       <button type="button" class="btn secondary btn-sm" onclick="togglePanel('restock-{{ m.id }}')">{{ t('restock_btn_action') }}</button>
       <button type="button" class="btn secondary btn-sm" onclick="togglePanel('edit-{{ m.id }}')">{{ t('edit_btn') }}</button>
       <button type="button" class="btn secondary btn-sm" onclick="togglePanel('history-{{ m.id }}')">{{ t('history_btn') }}</button>
-      <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');">
+      <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
       </form>
     </div>
 
     <div id="restock-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
-      <form method="POST" action="{{ url_for('restock_material', material_id=m.id) }}" class="form-grid">
+      <form method="POST" action="{{ url_for('restock_material', material_id=m.id) }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
           <label>{{ t('restock_qty_label') }}</label>
           <input type="number" step="any" name="qty" placeholder="0" required>
@@ -165,7 +165,7 @@
     </div>
 
     <div id="edit-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
-      <form method="POST" action="{{ url_for('edit_material', material_id=m.id) }}" class="form-grid">
+      <form method="POST" action="{{ url_for('edit_material', material_id=m.id) }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
           <label>{{ t('name') }}</label>
           <input type="text" name="name" value="{{ m.name }}" required>

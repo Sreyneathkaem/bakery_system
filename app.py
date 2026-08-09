@@ -11,6 +11,9 @@ import psycopg2
 import psycopg2.extras
 import requests
 from flask import Flask, render_template, request, redirect, url_for, session, g, flash, jsonify, send_file
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 
 from translations import get_translator, DEFAULT_LANG
@@ -28,7 +31,40 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key-in-production")
+
+# The session cookie is signed with this key — it's what actually keeps
+# someone logged in (login_required only checks the session, it doesn't
+# re-verify with Supabase on every request). A guessable fallback here means
+# anyone can forge a valid "logged in" cookie, so we fail loudly at startup
+# instead of silently running with a known-insecure default.
+try:
+    app.secret_key = os.environ["SECRET_KEY"]
+except KeyError:
+    raise RuntimeError(
+        "SECRET_KEY environment variable is not set. Set it to a long random "
+        "string before starting the app (see README.md / docker-compose.yml)."
+    )
+
+# Hard cap on request body size (covers the QR image upload) so a huge file
+# can't be pushed straight into the database as base64.
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024  # 5 MB
+
+csrf = CSRFProtect(app)
+
+limiter = Limiter(get_remote_address, app=app, storage_uri="memory://", default_limits=[])
+
+
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+    flash("Your session expired — please try that again.", "error")
+    return redirect(request.referrer or url_for("dashboard"))
+
+
+@app.errorhandler(413)
+def handle_too_large(e):
+    flash("That file is too large (5MB max).", "error")
+    return redirect(request.referrer or url_for("dashboard"))
+
 
 # Shown on invoices. Set these in your hosting provider's environment settings.
 SHOP_NAME = os.environ.get("SHOP_NAME", "ពងទាប្រៃបេកខេរី")
@@ -136,7 +172,7 @@ def init_db():
     """Creates tables if they don't exist yet. Safe to run every startup."""
     conn = _connect()
     cur = conn.cursor()
-    with open(SCHEMA_PATH) as f:
+    with open(SCHEMA_PATH, encoding="utf-8") as f:
         cur.execute(f.read())
     conn.commit()
     cur.close()
@@ -395,6 +431,7 @@ def login_required(view):
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute")
 def login():
     if request.method == "POST":
         email = request.form.get("email", "").strip()
@@ -1304,7 +1341,8 @@ if __name__ == "__main__":
     app.permanent_session_lifetime = timedelta(days=REMEMBER_ME_DAYS)
     init_db()
     migrate_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=5000, debug=debug_mode)
 else:
     app.permanent_session_lifetime = timedelta(days=REMEMBER_ME_DAYS)
     init_db()

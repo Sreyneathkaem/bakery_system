@@ -16,7 +16,7 @@
   </div>
 
   <div class="card" id="add-form-card" style="display:none; margin-bottom:16px;">
-    <form method="POST" action="{{ url_for('add_product') }}" class="form-grid">
+    <form method="POST" action="{{ url_for('add_product') }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="name">{{ t('name') }}</label>
         <input type="text" id="name" name="name" placeholder="{{ t('product_name_ph') }}" required>
@@ -140,7 +140,7 @@
           <span class="stat-label">{{ t('can_make_now') }}:</span><span class="{{ 'margin-neg' if item.max_producible == 0 else '' }}">{{ item.max_producible }}</span>
           {% endif %}
         </div>
-        <form method="POST" action="{{ url_for('delete_product', product_id=item.product.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_product', name=item.product.name) }}');">
+        <form method="POST" action="{{ url_for('delete_product', product_id=item.product.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_product', name=item.product.name) }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
         </form>
       </div>
@@ -162,7 +162,7 @@
         <span class="recipe-chip recipe-chip-editable" onclick="event.stopPropagation(); fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.batch_qty }}, {{ r.yield_count }})">
           {{ r.batch_qty|round(3) }}{{ r.unit }} {{ r.material_name }} {{ t('makes_label') }} {{ r.yield_count|round(0)|int }} {{ t('loaves_unit') }}
           <span class="chip-sub">({{ r.quantity_per_unit|round(4) }}{{ r.unit }}{{ t('per_unit_suffix') }})</span>
-          <form method="POST" action="{{ url_for('remove_recipe_ingredient', ingredient_id=r.id) }}" class="inline-form" onclick="event.stopPropagation();">
+          <form method="POST" action="{{ url_for('remove_recipe_ingredient', ingredient_id=r.id) }}" class="inline-form" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" title="{{ t('delete_btn') }}">&times;</button>
           </form>
         </span>
@@ -171,7 +171,7 @@
         {% endfor %}
       </div>
 
-      <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="form-grid recipe-form" id="recipe-form-{{ item.product.id }}" onclick="event.stopPropagation();">
+      <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="form-grid recipe-form" id="recipe-form-{{ item.product.id }}" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
           <label>{{ t('material_col') }}</label>
           <select name="material_id" id="recipe-material-{{ item.product.id }}" required>

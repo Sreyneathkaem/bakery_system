@@ -92,7 +92,7 @@
   <div class="card">
     <h3>{{ t('log_expense_title') }}</h3>
     <p style="color:#8A7A63; font-size:0.88rem; margin-top:-8px;">{{ t('log_expense_sub') }}</p>
-    <form method="POST" action="{{ url_for('add_expense') }}" class="form-row" id="expense-form">
+    <form method="POST" action="{{ url_for('add_expense') }}" class="form-row" id="expense-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="category">{{ t('category_label') }}</label>
         <input type="text" id="category" name="category" placeholder="{{ t('category_ph') }}" required>

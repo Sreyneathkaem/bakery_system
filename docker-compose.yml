@@ -11,22 +11,22 @@ services:
       - ./backups:/app/backups
     environment:
       # Change this before you go live!
-      - SECRET_KEY=please-change-this-to-something-random
+      - SECRET_KEY=any long random string
 
       # Points at the bundled Postgres container below. Only change this if
       # you're using Supabase instead — see README.md "Two ways to run this
       # app" for that path.
-      - DATABASE_URL=postgresql://bakery:bakery@db:5432/bakery
+      - DATABASE_URL=postgresql://postgres.iifmlmggumahgusvdsls:ksMWmXFTjcGSTInv@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres
 
       # Required for login. Create a free Supabase project (used only for
       # Auth here, not the database, if you're self-hosting Postgres) and
       # fill these in from Project Settings > API. See README.md.
-      - SUPABASE_URL=
-      - SUPABASE_ANON_KEY=
+      - SUPABASE_URL=https://iifmlmggumahgusvdsls.supabase.co
+      - SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpZm1sbWdndW1haGd1c3Zkc2xzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5OTIxNjgsImV4cCI6MjEwMTU2ODE2OH0.dOZvNVCj8RzB-KSGXX0SpGsy3BpOizpOPng2aj7UQ1M
 
       # Shown on invoices
       - SHOP_NAME=ពងទាប្រៃបេកខេរី
-      - SHOP_PHONE=
+      - SHOP_PHONE=092 465 373
 
       # Riel-per-dollar rate, used to show costs and invoice totals in both
       # currencies. Update this if the rate moves a lot.

@@ -23,7 +23,7 @@
         <div class="invoice-field-label" style="margin-bottom:6px;">{{ t('qr_current_label') }}</div>
         <img src="{{ url_for('payment_qr_image') }}" alt="Payment QR" class="qr-preview-img">
       </div>
-      <form method="POST" action="{{ url_for('delete_qr') }}" onsubmit="return confirm('{{ t('confirm_delete_qr') }}');">
+      <form method="POST" action="{{ url_for('delete_qr') }}" onsubmit="return confirm('{{ t('confirm_delete_qr') }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="danger-btn">{{ t('qr_delete_btn') }}</button>
       </form>
     </div>
@@ -91,7 +91,11 @@
       canvas.toBlob(function (blob) {
         const formData = new FormData();
         formData.append('qr_image', blob, 'payment_qr.png');
-        fetch("{{ url_for('upload_qr') }}", { method: 'POST', body: formData })
+        fetch("{{ url_for('upload_qr') }}", {
+          method: 'POST',
+          headers: { 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content },
+          body: formData,
+        })
           .then(function () { window.location.href = "{{ url_for('settings') }}"; })
           .catch(function () { statusEl.textContent = '{{ t("qr_upload_invalid") }}'; });
       }, 'image/png');

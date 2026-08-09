@@ -30,7 +30,7 @@
         {% endif %}
       {% endwith %}
 
-      <form method="POST">
+      <form method="POST"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="email" name="email" placeholder="{{ t('login_email_placeholder') }}" autofocus required>
         <input type="password" name="password" placeholder="{{ t('login_placeholder') }}" required>
         <label class="login-remember-row">

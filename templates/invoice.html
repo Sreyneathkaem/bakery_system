@@ -12,7 +12,7 @@
 </div>
 
 <div class="section no-print" style="max-width:600px; margin:0 auto 16px; display:flex; align-items:center; justify-content:space-between;">
-  <form method="POST" action="{{ url_for('toggle_payment_status', order_id=order.id) }}">
+  <form method="POST" action="{{ url_for('toggle_payment_status', order_id=order.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="payment-toggle-btn">
       {% if order.payment_status == 'paid' %}
       <span class="badge paid" style="font-size:0.9rem; padding:6px 14px;">{{ t('payment_paid') }}</span>
@@ -203,7 +203,10 @@
         const dataUrl = canvas.toDataURL('image/png');
         const resp = await fetch("{{ url_for('send_order_telegram_image', order_id=order.id) }}", {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content,
+          },
           body: JSON.stringify({ image: dataUrl }),
         });
         const result = await resp.json();
