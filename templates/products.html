@@ -104,6 +104,32 @@
     document.getElementById('recipe-material-' + productId).value = materialId;
     document.getElementById('recipe-batch-' + productId).value = batchQty;
     document.getElementById('recipe-yield-' + productId).value = yieldCount;
+    updateRecipeRow(productId);
+  }
+
+  // Keeps the unit label ("kg", "pcs"...) in sync with whichever material is
+  // selected, and shows a live "≈ X per piece" preview so the shop owner can
+  // sanity-check the math before submitting instead of guessing blind.
+  function updateRecipeRow(productId) {
+    const materialSelect = document.getElementById('recipe-material-' + productId);
+    const batchInput = document.getElementById('recipe-batch-' + productId);
+    const yieldInput = document.getElementById('recipe-yield-' + productId);
+    const unitLabel = document.getElementById('recipe-unit-' + productId);
+    const preview = document.getElementById('recipe-preview-' + productId);
+
+    const selectedOption = materialSelect.options[materialSelect.selectedIndex];
+    const unit = selectedOption ? (selectedOption.dataset.unit || '') : '';
+    unitLabel.textContent = unit || '{{ t("unit_choose") }}';
+
+    const qty = parseFloat(batchInput.value);
+    const yieldN = parseFloat(yieldInput.value);
+    if (unit && qty > 0 && yieldN > 0) {
+      preview.textContent = '≈ ' + (qty / yieldN).toFixed(4) + unit + '{{ t("per_unit_suffix") }}';
+      preview.classList.add('has-value');
+    } else {
+      preview.textContent = '';
+      preview.classList.remove('has-value');
+    }
   }
 </script>
 
@@ -171,28 +197,22 @@
         {% endfor %}
       </div>
 
-      <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="form-grid recipe-form" id="recipe-form-{{ item.product.id }}" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="field">
-          <label>{{ t('material_col') }}</label>
-          <select name="material_id" id="recipe-material-{{ item.product.id }}" required>
+      <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="recipe-form" id="recipe-form-{{ item.product.id }}" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="recipe-sentence-row">
+          <select name="material_id" id="recipe-material-{{ item.product.id }}" required onchange="updateRecipeRow({{ item.product.id }})">
             <option value="" disabled selected>{{ t('choose') }}</option>
             {% for m in all_materials %}
-            <option value="{{ m.id }}">{{ m.name }} ({{ m.unit }})</option>
+            <option value="{{ m.id }}" data-unit="{{ m.unit }}">{{ m.name }}</option>
             {% endfor %}
           </select>
-        </div>
-        <div class="field">
-          <label>{{ t('batch_qty_label') }}</label>
-          <input type="number" step="any" name="batch_qty" id="recipe-batch-{{ item.product.id }}" placeholder="1" required>
-        </div>
-        <div class="field">
-          <label>{{ t('yield_count_label') }}</label>
-          <input type="number" step="any" name="yield_count" id="recipe-yield-{{ item.product.id }}" placeholder="20" required>
-        </div>
-        <div class="field field-submit">
-          <label>&nbsp;</label>
+          <input type="number" step="any" name="batch_qty" id="recipe-batch-{{ item.product.id }}" placeholder="1" required class="recipe-num-input" oninput="updateRecipeRow({{ item.product.id }})">
+          <span class="recipe-unit-label" id="recipe-unit-{{ item.product.id }}">{{ t('unit_choose') }}</span>
+          <span class="recipe-makes-word">{{ t('makes_label') }}</span>
+          <input type="number" step="any" name="yield_count" id="recipe-yield-{{ item.product.id }}" placeholder="20" required class="recipe-num-input" oninput="updateRecipeRow({{ item.product.id }})">
+          <span class="recipe-unit-label">{{ t('loaves_unit') }}</span>
           <button type="submit" class="secondary">{{ t('add_to_recipe_btn') }}</button>
         </div>
+        <p class="field-hint recipe-live-preview" id="recipe-preview-{{ item.product.id }}"></p>
       </form>
     </div>
     {% endfor %}

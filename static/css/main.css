@@ -774,11 +774,46 @@ button.danger-btn:hover { background: var(--danger-bg); }
   background: var(--linen-dark);
 }
 
-.recipe-form input,
-.recipe-form select {
-  font-size: 0.95rem;
-  padding: 11px 12px;
+.recipe-sentence-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
 }
+
+.recipe-sentence-row select {
+  flex: 1 1 160px;
+  min-width: 130px;
+  font-size: 0.92rem;
+  padding: 10px 10px;
+}
+
+.recipe-num-input {
+  width: 64px;
+  flex: 0 0 64px;
+  font-size: 0.92rem;
+  padding: 10px 8px;
+  text-align: center;
+}
+
+.recipe-unit-label {
+  color: #6B5C4A;
+  font-size: 0.85rem;
+  min-width: 24px;
+}
+
+.recipe-makes-word {
+  color: var(--crust);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.recipe-live-preview {
+  min-height: 1.2em;
+  font-weight: 500;
+}
+.recipe-live-preview.has-value { color: var(--crust); }
 
 .product-card {
   margin-bottom: 16px;

@@ -880,9 +880,29 @@ def orders():
         for c in PRODUCT_CATEGORIES if products_by_category[c]
     ]
 
-    recent = db.execute(
-        "SELECT * FROM orders ORDER BY ordered_at DESC LIMIT 30"
-    ).fetchall()
+    # Date filter for the order list below — "today" and "all" are special-
+    # cased since they aren't a fixed day count; everything else is treated
+    # as "last N days". Defaults to 30 days, same as before.
+    days_filter = request.args.get("days", "30")
+    if days_filter == "today":
+        since = now_local().strftime("%Y-%m-%d")
+        recent = db.execute(
+            "SELECT * FROM orders WHERE date(ordered_at) >= ? ORDER BY ordered_at DESC",
+            (since,),
+        ).fetchall()
+    elif days_filter == "all":
+        # Still capped so the page can't grow unbounded on a long-running shop.
+        recent = db.execute("SELECT * FROM orders ORDER BY ordered_at DESC LIMIT 200").fetchall()
+    else:
+        try:
+            days_n = int(days_filter)
+        except ValueError:
+            days_n, days_filter = 30, "30"
+        since = (now_local() - timedelta(days=days_n)).strftime("%Y-%m-%d")
+        recent = db.execute(
+            "SELECT * FROM orders WHERE date(ordered_at) >= ? ORDER BY ordered_at DESC",
+            (since,),
+        ).fetchall()
 
     order_summaries = []
     for o in recent:
@@ -899,6 +919,7 @@ def orders():
         products=active_products,
         grouped_products=grouped_products,
         orders=order_summaries,
+        days_filter=days_filter,
     )
 
 
