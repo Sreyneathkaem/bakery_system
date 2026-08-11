@@ -260,12 +260,13 @@
       </div>
       <div class="product-row-right">
         <form method="POST" action="{{ url_for('toggle_payment_status', order_id=entry.order.id) }}" class="inline-form" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="payment-toggle-btn">
-            {% if entry.order.payment_status == 'paid' %}
-            <span class="badge paid">{{ t('payment_paid') }}</span>
-            {% else %}
-            <span class="badge pending">{{ t('payment_pending') }}</span>
-            {% endif %}
+          <button type="submit" class="payment-toggle" aria-pressed="{{ 'true' if entry.order.payment_status == 'paid' else 'false' }}">
+            <span class="payment-toggle-track {{ 'is-paid' if entry.order.payment_status == 'paid' }}">
+              <span class="payment-toggle-knob"></span>
+            </span>
+            <span class="payment-toggle-label {{ 'is-paid' if entry.order.payment_status == 'paid' else 'is-pending' }}">
+              {{ t('payment_paid') if entry.order.payment_status == 'paid' else t('payment_pending') }}
+            </span>
           </button>
         </form>
         <span class="product-row-price mono">${{ '%.2f'|format(entry.order.total_amount) }}</span>

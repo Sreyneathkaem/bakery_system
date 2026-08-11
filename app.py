@@ -91,15 +91,26 @@ PG_TIMEZONE_NAME = "Asia/Phnom_Penh"
 # refresh. Appending ?v=<mtime> to the link changes the URL whenever the
 # file's contents actually change, so the browser fetches a fresh copy
 # automatically on the next visit after a deploy.
-try:
-    ASSET_VERSION = str(int(os.path.getmtime(os.path.join(BASE_DIR, "static", "css", "main.css"))))
-except OSError:
-    ASSET_VERSION = "1"
+#
+# The mtime is read fresh on every request (not cached at import time).
+# A stat() call is cheap, and reading it once at startup meant editing
+# main.css while the dev server was still running left ?v= pointing at
+# the old value indefinitely — Flask's reloader watches .py files, not
+# static/, so the stylesheet would keep looking stale until the process
+# was manually restarted.
+_MAIN_CSS_PATH = os.path.join(BASE_DIR, "static", "css", "main.css")
+
+
+def _current_asset_version():
+    try:
+        return str(int(os.path.getmtime(_MAIN_CSS_PATH)))
+    except OSError:
+        return "1"
 
 
 @app.context_processor
 def inject_asset_version():
-    return {"asset_version": ASSET_VERSION}
+    return {"asset_version": _current_asset_version()}
 
 
 def now_local():

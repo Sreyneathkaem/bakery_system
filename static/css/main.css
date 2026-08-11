@@ -381,6 +381,55 @@ td.num, th.num { font-family: var(--font-mono); text-align: right; }
 .payment-toggle-btn:hover .badge.pending { background: #F3E2BC; }
 .payment-toggle-btn:hover .badge.paid { background: #DCE6D3; }
 
+/* Real switch control for payment status — a sliding track + knob instead
+   of a text pill, so "paid vs pending" reads as a toggle at a glance. No
+   text label crowds it; the color and knob position carry the meaning,
+   same as any standard on/off switch. */
+.payment-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.payment-toggle-track {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  background: #DCD3C4;
+  box-shadow: inset 0 1px 2px rgba(46, 33, 24, 0.15);
+  transition: background 0.18s ease;
+  flex-shrink: 0;
+}
+.payment-toggle-track.is-paid {
+  background: var(--sage);
+  box-shadow: none;
+}
+.payment-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.18s ease;
+}
+.payment-toggle-track.is-paid .payment-toggle-knob { transform: translateX(20px); }
+.payment-toggle:hover .payment-toggle-track { filter: brightness(0.94); }
+.payment-toggle:active .payment-toggle-track { filter: brightness(0.88); }
+.payment-toggle-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.payment-toggle-label.is-paid { color: var(--sage-dark, #46543C); }
+.payment-toggle-label.is-pending { color: #8A7A63; }
+
 /* ---------- Forms ---------- */
 
 .form-row {
