@@ -269,7 +269,7 @@
       <div>
         <div class="material-card-name">
           <h3 style="margin:0;">{{ m.name }}</h3>
-          {% if m.stock_qty <= 0 %}
+          {% if m.stock_qty|round(2) <= 0 %}
             <span class="badge low">{{ t('low_badge') }}</span>
           {% else %}
             <span class="badge ok">{{ t('ok_badge') }}</span>

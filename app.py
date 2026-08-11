@@ -509,7 +509,7 @@ def dashboard():
     db = get_db()
 
     low_stock = db.execute(
-        "SELECT * FROM materials WHERE stock_qty <= 0 ORDER BY stock_qty ASC"
+        "SELECT * FROM materials WHERE ROUND(stock_qty::numeric, 2) <= 0 ORDER BY stock_qty ASC"
     ).fetchall()
 
     today = now_local().strftime("%Y-%m-%d")
@@ -883,7 +883,14 @@ def products():
             "shared_materials": shared_materials,
         })
 
-    return render_template("products.html", products=products_with_recipes, all_materials=all_materials, khr_per_usd=KHR_PER_USD)
+    open_product_id = request.args.get("open", type=int)
+    return render_template(
+        "products.html",
+        products=products_with_recipes,
+        all_materials=all_materials,
+        khr_per_usd=KHR_PER_USD,
+        open_product_id=open_product_id,
+    )
 
 
 @app.route("/products/add", methods=["POST"])
@@ -982,17 +989,20 @@ def add_recipe_ingredient(product_id):
         )
     db.commit()
     flash(g.t("flash_recipe_updated"), "success")
-    return redirect(url_for("products"))
+    return redirect(url_for("products", open=product_id))
 
 
 @app.route("/products/recipe/<int:ingredient_id>/remove", methods=["POST"])
 @login_required
 def remove_recipe_ingredient(ingredient_id):
     db = get_db()
+    row = db.execute(
+        "SELECT product_id FROM product_ingredients WHERE id = ?", (ingredient_id,)
+    ).fetchone()
     db.execute("DELETE FROM product_ingredients WHERE id = ?", (ingredient_id,))
     db.commit()
     flash(g.t("flash_ingredient_removed"), "success")
-    return redirect(url_for("products"))
+    return redirect(url_for("products", open=row["product_id"] if row else None))
 
 
 @app.route("/products/<int:product_id>/delete", methods=["POST"])

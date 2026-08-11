@@ -145,6 +145,18 @@
     });
     unitSelect.value = baseUnit;
   }
+
+  // After adding/removing a recipe ingredient, the server redirects back
+  // with ?open=<product_id> so this product's panel re-expands instead of
+  // the whole list collapsing — lets her add several ingredients to the
+  // same product in a row without re-finding and re-tapping it each time.
+  {% if open_product_id %}
+  document.addEventListener('DOMContentLoaded', function () {
+    toggleProductDetail({{ open_product_id }});
+    const row = document.getElementById('detail-{{ open_product_id }}');
+    if (row) { row.scrollIntoView({ block: 'nearest' }); }
+  });
+  {% endif %}
 </script>
 
 <div class="section">
