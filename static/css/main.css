@@ -879,6 +879,116 @@ button.danger-btn:hover { background: var(--danger-bg); }
   cursor: not-allowed;
 }
 
+/* ---------- Bake planner (Materials page) ---------- */
+
+.bake-planner-card { margin-bottom: 20px; }
+
+.bake-planner-label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8A7A63;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.bake-product-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--flour);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+}
+
+.bake-product-name {
+  font-weight: 600;
+  color: var(--rye);
+  font-size: 0.94rem;
+}
+
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qty-step-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  line-height: 1;
+  font-size: 1.1rem;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--rye);
+  border: 1px solid var(--linen-dark);
+}
+.qty-step-btn:hover { background: var(--linen); }
+
+.bake-qty-input {
+  width: 50px;
+  text-align: center;
+  padding: 6px 4px;
+  -moz-appearance: textfield;
+}
+.bake-qty-input::-webkit-outer-spin-button,
+.bake-qty-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.bake-ingredients-list {
+  background: var(--flour);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.bake-ingredient-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 12px;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--linen-dark);
+}
+.bake-ingredient-row:last-child { border-bottom: none; }
+.bake-ingredient-row.ok { color: var(--sage); }
+.bake-ingredient-row.short {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.bake-shortage-banner {
+  margin-top: 10px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 0.85rem;
+}
+
+/* ---------- Available-to-sell indicators (Orders page) ---------- */
+
+.available-count-text { color: var(--sage); font-weight: 600; }
+.sold-out-text { color: var(--danger); font-weight: 600; }
+
+.ptc-availability {
+  font-size: 0.72rem;
+  color: var(--sage);
+  margin-top: 3px;
+  font-weight: 600;
+}
+.ptc-availability.sold-out-text { color: var(--danger); }
+
+.product-tap-card.sold-out {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.product-tap-card.sold-out:active { transform: none; }
+
 .product-tap-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));

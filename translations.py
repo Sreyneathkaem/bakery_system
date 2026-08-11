@@ -111,8 +111,22 @@ TR = {
         "reason_restock": "បន្ថែមស្តុក",
         "reason_adjustment": "កែសម្រួល",
         "reason_used_in_order": "ប្រើក្នុងការកម្ម៉ង់",
+        "reason_used_in_production": "ប្រើក្នុងការដុត",
         "manage_col": "គ្រប់គ្រង",
         "supplier_col": "ទីតាំង/អ្នកលក់",
+
+        # Bake planner (Materials page)
+        "bake_planner_title": "តើថ្ងៃនេះនឹងដុតអ្វី?",
+        "bake_planner_sub": "កត់ត្រាអ្វីដែលដុតរួច ដើម្បីកាត់វត្ថុធាតុដើម និងបញ្ចូលទៅជា \"អាចលក់បាន\"",
+        "what_did_you_bake": "ដុតបានប៉ុន្មាន",
+        "ingredients_needed_title": "វត្ថុធាតុដើមត្រូវការ",
+        "bake_planner_empty_hint": "បញ្ចូលចំនួនខាងលើ ដើម្បីមើលថាតើត្រូវការវត្ថុធាតុដើមប៉ុន្មាន",
+        "bake_planner_shortage_hint": "វត្ថុធាតុដើមមិនគ្រប់គ្រាន់ — សូមកាត់បន្ថយចំនួន ឬបន្ថែមស្តុកសិន។",
+        "confirm_bake_btn": "បញ្ជាក់ការដុត",
+        "confirm_bake_blocked_btn": "បញ្ជាក់ការដុត (វត្ថុធាតុដើមមិនគ្រប់គ្រាន់)",
+        "bake_no_items": "សូមបញ្ចូលចំនួនយ៉ាងហោចណាស់មួយផលិតផល។",
+        "bake_shortage": "វត្ថុធាតុដើមមិនគ្រប់គ្រាន់សម្រាប់ការដុតនេះ៖ {details}",
+        "bake_success": "បានកត់ត្រាការដុត៖ {items}",
 
         # Products / recipe
         "products_title": "ផលិតផល",
@@ -165,7 +179,7 @@ TR = {
         "confirm_delete_order": "តើអ្នកចង់លុបការកម្ម៉ង់នេះមែនទេ? (ស្តុកនឹងមិនត្រូវបានបន្ថែមមកវិញទេ)",
         "order_success": "បានកត់ត្រាការកម្ម៉ង់សម្រាប់ {customer}: សរុប ${total} (ចំណេញ ${profit})",
         "order_no_items": "សូមបន្ថែមផលិតផលយ៉ាងហោចណាស់មួយ ជាមួយចំនួនត្រឹមត្រូវ។",
-        "order_shortage": "ស្តុកមិនគ្រប់គ្រាន់សម្រាប់ការកម្ម៉ង់នេះ៖ {details}",
+        "order_shortage": "មិនមានស្តុកគ្រប់គ្រាន់សម្រាប់លក់ក្នុងការកម្ម៉ង់នេះ៖ {details}",
         "order_deleted": "បានលុបការកម្ម៉ង់។",
         "walk_in_customer": "អតិថិជនទូទៅ",
         "customer_phone_label": "លេខទូរស័ព្ទអតិថិជន (មិនចាំបាច់)",
@@ -183,6 +197,13 @@ TR = {
         "empty_order_hint": "មិនទាន់ជ្រើសរើសផលិតផលទេ — ចុចលើផលិតផលខាងលើ",
         "add_customer_info_btn": "បន្ថែមព័ត៌មានអតិថិជន (មិនចាំបាច់)",
         "clear_order_btn": "សម្អាត",
+
+        # Available to sell (Orders page)
+        "available_to_sell_title": "អាចលក់បាន",
+        "available_to_sell_sub": "ចំនួនដែលបានដុតរួច និងអាចលក់បាននៅពេលនេះ",
+        "available_count": "{count} អាចលក់បាន",
+        "sold_out_label": "អស់ស្តុក",
+        "no_available_stock_warning": "មិនទាន់មានផលិតផលអាចលក់បានទេ — សូមកត់ត្រាការដុតនៅទំព័រ វត្ថុធាតុដើម សិន។",
 
         # Payment status
         "payment_status_col": "ការទូទាត់",
@@ -418,8 +439,22 @@ TR = {
         "reason_restock": "Restock",
         "reason_adjustment": "Adjustment",
         "reason_used_in_order": "Used in order",
+        "reason_used_in_production": "Used in baking",
         "manage_col": "Manage",
         "supplier_col": "Where to buy / Seller",
+
+        # Bake planner (Materials page)
+        "bake_planner_title": "What did you bake today?",
+        "bake_planner_sub": "Log what you baked to deduct materials and add it to \"available to sell\"",
+        "what_did_you_bake": "How many did you bake",
+        "ingredients_needed_title": "Ingredients needed",
+        "bake_planner_empty_hint": "Enter quantities above to see how much material that needs",
+        "bake_planner_shortage_hint": "Not enough materials for this — reduce the quantity or restock first.",
+        "confirm_bake_btn": "Confirm bake",
+        "confirm_bake_blocked_btn": "Confirm bake (not enough materials)",
+        "bake_no_items": "Enter a quantity for at least one product.",
+        "bake_shortage": "Not enough materials for this bake: {details}",
+        "bake_success": "Logged bake: {items}",
 
         "products_title": "Products",
         "products_sub": "Set prices and the recipe (materials used) for each product.",
@@ -470,7 +505,7 @@ TR = {
         "confirm_delete_order": "Delete this order? (stock will not be restored)",
         "order_success": "Logged order for {customer}: total ${total} (profit ${profit})",
         "order_no_items": "Add at least one product with a valid quantity.",
-        "order_shortage": "Not enough stock for this order: {details}",
+        "order_shortage": "Not enough available stock for this order: {details}",
         "order_deleted": "Order deleted.",
         "walk_in_customer": "Walk-in customer",
         "customer_phone_label": "Customer phone (optional)",
@@ -488,6 +523,13 @@ TR = {
         "empty_order_hint": "No products selected yet — tap one above",
         "add_customer_info_btn": "Add customer info (optional)",
         "clear_order_btn": "Clear",
+
+        # Available to sell (Orders page)
+        "available_to_sell_title": "Available to sell",
+        "available_to_sell_sub": "What's baked and ready to sell right now",
+        "available_count": "{count} available",
+        "sold_out_label": "Sold out",
+        "no_available_stock_warning": "Nothing available to sell yet — log a bake on the Materials page first.",
 
         # Payment status
         "payment_status_col": "Payment",

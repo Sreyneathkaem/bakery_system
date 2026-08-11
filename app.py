@@ -203,6 +203,8 @@ def migrate_db():
         cur.execute("ALTER TABLE orders ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'pending'")
     if not column_exists("products", "category"):
         cur.execute("ALTER TABLE products ADD COLUMN category TEXT NOT NULL DEFAULT 'other'")
+    if not column_exists("products", "available_qty"):
+        cur.execute("ALTER TABLE products ADD COLUMN available_qty DOUBLE PRECISION NOT NULL DEFAULT 0")
     if not column_exists("materials", "supplier_name"):
         cur.execute("ALTER TABLE materials ADD COLUMN supplier_name TEXT")
     if not column_exists("materials", "supplier_contact"):
@@ -535,8 +537,37 @@ def materials():
             "SELECT * FROM stock_transactions WHERE material_id = ? ORDER BY created_at DESC LIMIT 10",
             (m["id"],),
         ).fetchall()
+
+    # Bake planner: every active product's recipe, plus current material
+    # stock, sent down as JSON so the "ingredients needed" check can update
+    # live in the browser as she types quantities — no round trip needed
+    # until she actually taps "Confirm bake".
+    active_products = db.execute(
+        "SELECT * FROM products WHERE active = 1 ORDER BY name ASC"
+    ).fetchall()
+    bake_products = []
+    for p in active_products:
+        recipe = db.execute(
+            "SELECT material_id, quantity_per_unit FROM product_ingredients WHERE product_id = ?",
+            (p["id"],),
+        ).fetchall()
+        bake_products.append({
+            "id": p["id"],
+            "name": p["name"],
+            "recipe": [{"material_id": r["material_id"], "qty_per_unit": r["quantity_per_unit"]} for r in recipe],
+        })
+    materials_for_planner = {
+        m["id"]: {"name": m["name"], "unit": m["unit"], "stock_qty": m["stock_qty"]} for m in rows
+    }
+
     return render_template(
-        "materials.html", materials=rows, khr_per_usd=KHR_PER_USD, history_by_material=history_by_material
+        "materials.html",
+        materials=rows,
+        khr_per_usd=KHR_PER_USD,
+        history_by_material=history_by_material,
+        bake_products=bake_products,
+        bake_products_json=json.dumps(bake_products),
+        materials_planner_json=json.dumps(materials_for_planner),
     )
 
 
@@ -693,6 +724,49 @@ def delete_material(material_id):
     db.execute("DELETE FROM materials WHERE id = ?", (material_id,))
     db.commit()
     flash(g.t("flash_material_deleted"), "success")
+    return redirect(url_for("materials"))
+
+
+@app.route("/materials/bake", methods=["POST"])
+@login_required
+def confirm_bake():
+    """Logs an actual production batch: deducts raw materials for real
+    (based on each baked product's recipe, aggregated so a material shared
+    across several products is only checked/deducted once), and adds the
+    baked quantity to each product's available_qty — the finished-goods
+    stock that Orders sells from. This is the one place materials actually
+    leave stock now; selling on Orders no longer touches materials directly,
+    since that already happened here."""
+    db = get_db()
+    lines = parse_order_form_lines(request.form)  # same product_id[]/quantity[] shape as an order
+
+    if not lines:
+        flash(g.t("bake_no_items"), "error")
+        return redirect(url_for("materials"))
+
+    line_details, material_needed = compute_order_lines(db, lines)
+    shortages = find_stock_shortages(db, material_needed)
+
+    if shortages:
+        flash(g.t("bake_shortage", details="; ".join(shortages)), "error")
+        return redirect(url_for("materials"))
+
+    for ld in line_details:
+        for ing in ld["recipe"]:
+            needed = ing["quantity_per_unit"] * ld["qty"]
+            db.execute("UPDATE materials SET stock_qty = stock_qty - ? WHERE id = ?", (needed, ing["material_id"]))
+            db.execute(
+                "INSERT INTO stock_transactions (material_id, change_qty, reason, note) VALUES (?, ?, 'used_in_production', ?)",
+                (ing["material_id"], -needed, f'{ld["product"]["name"]} x{ld["qty"]:g}'),
+            )
+        db.execute(
+            "UPDATE products SET available_qty = available_qty + ? WHERE id = ?",
+            (ld["qty"], ld["product"]["id"]),
+        )
+
+    db.commit()
+    baked_summary = ", ".join(f'{ld["product"]["name"]} x{ld["qty"]:g}' for ld in line_details)
+    flash(g.t("bake_success", items=baked_summary), "success")
     return redirect(url_for("materials"))
 
 
@@ -977,21 +1051,33 @@ def find_stock_shortages(db, material_needed):
     return shortages
 
 
-def restore_order_stock(db, order_id):
-    """Reverses the stock deduction of an existing order's items, using each
-    product's current recipe. Used before re-applying an edited order."""
+def find_availability_shortages(db, lines):
+    """Checks planned order lines against each product's baked-and-available
+    stock (available_qty) — not raw materials, which were already deducted
+    when the batch was baked via /materials/bake. Aggregates by product in
+    case the same product appears on more than one line."""
+    needed_by_product = {}
+    for product_id, qty in lines:
+        needed_by_product[product_id] = needed_by_product.get(product_id, 0) + qty
+    shortages = []
+    for product_id, needed in needed_by_product.items():
+        product = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+        if product and product["available_qty"] < needed:
+            shortages.append(f'{product["name"]} ({needed:g} / {product["available_qty"]:g})')
+    return shortages
+
+
+def restore_order_availability(db, order_id):
+    """Reverses the available-to-sell deduction of an existing order's items
+    (adds the quantity back to what's available). Used before re-applying an
+    edited order. Does not touch raw materials — those were already consumed
+    when the batch was baked, not when the order was placed."""
     items = db.execute("SELECT * FROM order_items WHERE order_id = ?", (order_id,)).fetchall()
     for it in items:
-        recipe = db.execute(
-            "SELECT * FROM product_ingredients WHERE product_id = ?", (it["product_id"],)
-        ).fetchall()
-        for ing in recipe:
-            restored = ing["quantity_per_unit"] * it["quantity"]
-            db.execute("UPDATE materials SET stock_qty = stock_qty + ? WHERE id = ?", (restored, ing["material_id"]))
-            db.execute(
-                "INSERT INTO stock_transactions (material_id, change_qty, reason, note) VALUES (?, ?, 'adjustment', ?)",
-                (ing["material_id"], restored, f"Reversed for order #{order_id} edit"),
-            )
+        db.execute(
+            "UPDATE products SET available_qty = available_qty + ? WHERE id = ?",
+            (it["quantity"], it["product_id"]),
+        )
 
 
 @app.route("/orders/add", methods=["POST"])
@@ -1008,8 +1094,12 @@ def add_order():
         flash(g.t("order_no_items"), "error")
         return redirect(url_for("orders"))
 
-    line_details, material_needed = compute_order_lines(db, lines)
-    shortages = find_stock_shortages(db, material_needed)
+    # line_cost still uses each product's recipe and current material cost,
+    # purely to estimate COGS for profit reporting — the recipe itself
+    # isn't re-checked against materials here, only against what's already
+    # baked and available (materials were consumed at bake time instead).
+    line_details, _material_needed = compute_order_lines(db, lines)
+    shortages = find_availability_shortages(db, lines)
 
     if shortages:
         flash(g.t("order_shortage", details="; ".join(shortages)), "error")
@@ -1034,13 +1124,10 @@ def add_order():
             "VALUES (?, ?, ?, ?, ?, ?)",
             (order_id, ld["product"]["id"], ld["qty"], ld["product"]["price"], ld["line_total"], ld["line_cost"]),
         )
-        for ing in ld["recipe"]:
-            needed = ing["quantity_per_unit"] * ld["qty"]
-            db.execute("UPDATE materials SET stock_qty = stock_qty - ? WHERE id = ?", (needed, ing["material_id"]))
-            db.execute(
-                "INSERT INTO stock_transactions (material_id, change_qty, reason, note) VALUES (?, ?, 'used_in_order', ?)",
-                (ing["material_id"], -needed, f'{ld["product"]["name"]} x{ld["qty"]}'),
-            )
+        db.execute(
+            "UPDATE products SET available_qty = available_qty - ? WHERE id = ?",
+            (ld["qty"], ld["product"]["id"]),
+        )
 
     db.commit()
     flash(
@@ -1085,12 +1172,14 @@ def edit_order(order_id):
         flash(g.t("order_no_items"), "error")
         return redirect(url_for("edit_order", order_id=order_id))
 
-    # Undo the original stock deduction first (not committed yet), then
-    # validate the new lines against that restored stock. If anything is
-    # short, we roll back so the restore itself never takes effect.
-    restore_order_stock(db, order_id)
-    line_details, material_needed = compute_order_lines(db, lines)
-    shortages = find_stock_shortages(db, material_needed)
+    # Undo the original availability deduction first (not committed yet),
+    # then validate the new lines against that restored available stock. If
+    # anything is short, we roll back so the restore itself never takes
+    # effect. Raw materials are untouched either way — they were consumed
+    # when the batch was baked, not when this order was placed.
+    restore_order_availability(db, order_id)
+    line_details, _material_needed = compute_order_lines(db, lines)
+    shortages = find_availability_shortages(db, lines)
 
     if shortages:
         db.rollback()
@@ -1115,13 +1204,10 @@ def edit_order(order_id):
             "VALUES (?, ?, ?, ?, ?, ?)",
             (order_id, ld["product"]["id"], ld["qty"], ld["product"]["price"], ld["line_total"], ld["line_cost"]),
         )
-        for ing in ld["recipe"]:
-            needed = ing["quantity_per_unit"] * ld["qty"]
-            db.execute("UPDATE materials SET stock_qty = stock_qty - ? WHERE id = ?", (needed, ing["material_id"]))
-            db.execute(
-                "INSERT INTO stock_transactions (material_id, change_qty, reason, note) VALUES (?, ?, 'used_in_order', ?)",
-                (ing["material_id"], -needed, f'{ld["product"]["name"]} x{ld["qty"]} (edited)'),
-            )
+        db.execute(
+            "UPDATE products SET available_qty = available_qty - ? WHERE id = ?",
+            (ld["qty"], ld["product"]["id"]),
+        )
 
     db.commit()
     flash(g.t("order_updated_success"), "success")

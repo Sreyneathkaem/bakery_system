@@ -10,6 +10,142 @@
 </div>
 
 <div class="section">
+  <div class="card bake-planner-card">
+    <h3>{{ t('bake_planner_title') }}</h3>
+    <p class="field-hint" style="margin-bottom:16px;">{{ t('bake_planner_sub') }}</p>
+
+    {% if bake_products %}
+    <div class="bake-planner-label">{{ t('what_did_you_bake') }}</div>
+    <div id="bake-product-list">
+      {% for p in bake_products %}
+      <div class="bake-product-row">
+        <div class="bake-product-name">{{ p.name }}</div>
+        <div class="qty-stepper">
+          <button type="button" class="qty-step-btn" data-action="dec" data-pid="{{ p.id }}">−</button>
+          <input type="number" min="0" step="1" value="0" inputmode="numeric" class="bake-qty-input mono" id="bake-qty-{{ p.id }}" data-pid="{{ p.id }}">
+          <button type="button" class="qty-step-btn" data-action="inc" data-pid="{{ p.id }}">+</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="bake-planner-label" style="margin-top:18px;">{{ t('ingredients_needed_title') }}</div>
+    <div id="bake-ingredients-list" class="bake-ingredients-list">
+      <div class="empty-state" id="bake-empty-hint">{{ t('bake_planner_empty_hint') }}</div>
+    </div>
+
+    <div id="bake-shortage-msg" class="bake-shortage-banner" style="display:none;"></div>
+
+    <form method="POST" action="{{ url_for('confirm_bake') }}" id="bake-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div id="bake-hidden-inputs"></div>
+      <button type="submit" id="confirm-bake-btn" class="btn" style="width:100%; margin-top:14px;" disabled>{{ t('confirm_bake_btn') }}</button>
+    </form>
+
+    <script id="bake-products-data" type="application/json">{{ bake_products_json | safe }}</script>
+    <script id="bake-materials-data" type="application/json">{{ materials_planner_json | safe }}</script>
+    <script>
+      (function () {
+        const bakeProducts = JSON.parse(document.getElementById('bake-products-data').textContent);
+        const materialsData = JSON.parse(document.getElementById('bake-materials-data').textContent);
+        const listEl = document.getElementById('bake-ingredients-list');
+        const emptyHint = document.getElementById('bake-empty-hint');
+        const shortageBanner = document.getElementById('bake-shortage-msg');
+        const confirmBtn = document.getElementById('confirm-bake-btn');
+        const hiddenInputsWrap = document.getElementById('bake-hidden-inputs');
+
+        function getQty(pid) {
+          const el = document.getElementById('bake-qty-' + pid);
+          return el ? (parseInt(el.value, 10) || 0) : 0;
+        }
+        function setQty(pid, qty) {
+          const el = document.getElementById('bake-qty-' + pid);
+          if (el) el.value = Math.max(0, qty);
+          recalc();
+        }
+
+        document.querySelectorAll('.qty-step-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const pid = btn.dataset.pid;
+            const dir = btn.dataset.action === 'inc' ? 1 : -1;
+            setQty(pid, getQty(pid) + dir);
+          });
+        });
+        document.querySelectorAll('.bake-qty-input').forEach(function (input) {
+          input.addEventListener('input', recalc);
+        });
+
+        function recalc() {
+          const needed = {};
+          let anyQty = false;
+
+          bakeProducts.forEach(function (p) {
+            const qty = getQty(p.id);
+            if (qty > 0) {
+              anyQty = true;
+              p.recipe.forEach(function (r) {
+                needed[r.material_id] = (needed[r.material_id] || 0) + r.qty_per_unit * qty;
+              });
+            }
+          });
+
+          listEl.innerHTML = '';
+          let hasShortage = false;
+
+          if (!anyQty) {
+            listEl.appendChild(emptyHint);
+          } else if (Object.keys(needed).length === 0) {
+            listEl.appendChild(emptyHint);
+          } else {
+            Object.keys(needed).forEach(function (mid) {
+              const mat = materialsData[mid];
+              if (!mat) return;
+              const need = needed[mid];
+              const short = need > mat.stock_qty + 1e-9;
+              if (short) hasShortage = true;
+              const row = document.createElement('div');
+              row.className = 'bake-ingredient-row' + (short ? ' short' : ' ok');
+              row.innerHTML =
+                '<span>' + mat.name + '</span>' +
+                '<span class="mono">' + need.toFixed(2) + mat.unit + ' / ' + mat.stock_qty.toFixed(2) + mat.unit + '</span>';
+              listEl.appendChild(row);
+            });
+          }
+
+          hiddenInputsWrap.innerHTML = '';
+          bakeProducts.forEach(function (p) {
+            const qty = getQty(p.id);
+            if (qty > 0) {
+              const pidInput = document.createElement('input');
+              pidInput.type = 'hidden'; pidInput.name = 'product_id[]'; pidInput.value = p.id;
+              const qtyInput = document.createElement('input');
+              qtyInput.type = 'hidden'; qtyInput.name = 'quantity[]'; qtyInput.value = qty;
+              hiddenInputsWrap.appendChild(pidInput);
+              hiddenInputsWrap.appendChild(qtyInput);
+            }
+          });
+
+          if (hasShortage) {
+            shortageBanner.style.display = 'block';
+            shortageBanner.textContent = "{{ t('bake_planner_shortage_hint') }}";
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = "{{ t('confirm_bake_blocked_btn') }}";
+          } else {
+            shortageBanner.style.display = 'none';
+            confirmBtn.disabled = !anyQty;
+            confirmBtn.textContent = "{{ t('confirm_bake_btn') }}";
+          }
+        }
+
+        recalc();
+      })();
+    </script>
+    {% else %}
+    <div class="empty-state">{{ t('no_products_warning') }}</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section">
   <div class="materials-toolbar">
     <span class="materials-count">{{ t('materials_count', count=materials|length) }}</span>
     <button type="button" class="btn" id="toggle-add-btn" onclick="toggleAddForm()">{{ t('add_material_toggle') }}</button>
@@ -257,6 +393,7 @@
               {% if h.reason == 'restock' %}{{ t('reason_restock') }}
               {% elif h.reason == 'adjustment' %}{{ t('reason_adjustment') }}
               {% elif h.reason == 'used_in_order' %}{{ t('reason_used_in_order') }}
+              {% elif h.reason == 'used_in_production' %}{{ t('reason_used_in_production') }}
               {% else %}{{ h.reason }}{% endif %}
             </td>
             <td>{{ h.note or '' }}</td>

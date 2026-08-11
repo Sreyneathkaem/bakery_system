@@ -337,17 +337,29 @@ bakery-app/
 
 ## Notes on the numbers
 
+- **Baking is two steps now: bake, then sell.** The **"What did you bake
+  today?"** planner at the top of the Materials page is where raw materials
+  actually leave stock — enter how many of each product you baked, and the
+  app checks the total materials needed (correctly combined across every
+  product that shares an ingredient, e.g. salt used in both cookies and
+  croissants) against what's on hand before letting you confirm. Once
+  confirmed, that quantity becomes **available to sell** on the Orders
+  page. Orders no longer touch raw materials directly — they sell from
+  whatever's available, and block if you try to sell more than was baked.
+  If a product has no recipe set, baking it just adds straight to available
+  stock (useful for resale items with nothing to track ingredients for).
 - **Recipes use a "yield" model.** On the Products page, for each material
   you enter an amount and how many units it produces — e.g. batch = 1kg,
   yield = 20 breads. The app stores the per-bread amount (0.05kg here) and
-  uses that for every order automatically. Update this any time your sister
-  changes a recipe; it recalculates immediately.
+  uses that for the bake planner's material check automatically. Update
+  this any time your sister changes a recipe; it recalculates immediately.
 - **Cost/unit and margin** shown on each product are calculated live from its
   recipe and the current cost-per-unit of each material.
-- **Material cost (used)** on the Reports page is calculated from what was
-  actually deducted for orders (via each product's recipe) — not from
-  restocking. It's an estimate of ingredient cost per order, not total
-  spend on ingredients.
+- **Material cost (used)** on the Reports page is an estimate of ingredient
+  cost per unit sold, calculated from each product's recipe and current
+  material cost — not from what was actually deducted at bake time. It's a
+  COGS estimate for profit reporting, not a live materials ledger (that's
+  what the Materials page's own stock and history are for).
 - **Net profit** = income − material cost (used) − other logged expenses.
 - **Payment status**: every order starts **Pending**. Tap its badge (on the
   Orders list, dashboard, or the invoice page) to flip it to **Paid** — tap
@@ -355,17 +367,17 @@ bakery-app/
   numbers; income is recorded when the order is logged either way, so
   Reports reflect what was sold, not what's been collected yet.
 - An order can include several different products at once (e.g. 5 chocolate
-  breads + 10 plain breads in one order) — stock for shared ingredients like
-  flour is deducted correctly across all lines.
-- Deleting an order removes the income record but does **not** put stock back
-  automatically (in case the stock was used for something else in the
-  meantime) — restock manually on the Materials page if needed.
+  breads + 10 plain breads in one order) — each is checked and deducted
+  against its own available-to-sell quantity.
+- Deleting an order removes the income record but does **not** put the
+  available-to-sell quantity back automatically (in case it was already
+  accounted for elsewhere) — adjust manually if needed.
 - **Editing an order**: click "Edit" next to any order to change products,
-  quantities, or customer info. Behind the scenes, the app first reverses
-  the stock deduction from the original order, then re-validates and
-  re-deducts stock for the new version — so if the edit would run you out
-  of an ingredient, it's blocked with the same shortage message as a new
-  order, and nothing changes until it's valid.
+  quantities, or customer info. Behind the scenes, the app first restores
+  the original order's quantities back to available-to-sell, then
+  re-validates and re-deducts for the new version — so if the edit would
+  ask for more than what's available, it's blocked with the same shortage
+  message as a new order, and nothing changes until it's valid.
 - **Cost in $ or ៛ everywhere**: on Materials, Products (selling price), and
   Reports (expenses), enter a number in whichever currency you know —
   dollars or Riel — and the app fills in the other automatically using the

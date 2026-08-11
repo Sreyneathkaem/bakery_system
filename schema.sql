@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS products (
     name TEXT NOT NULL UNIQUE,
     price DOUBLE PRECISION NOT NULL DEFAULT 0,
     category TEXT NOT NULL DEFAULT 'other',  -- 'bread' | 'pastry' | 'cake' | 'drink' | 'other'
+    available_qty DOUBLE PRECISION NOT NULL DEFAULT 0,  -- baked, not yet sold
     active INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

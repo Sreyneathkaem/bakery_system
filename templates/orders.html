@@ -10,6 +10,36 @@
 </div>
 
 <div class="section">
+  <div class="section-head">
+    <h2>{{ t('available_to_sell_title') }}</h2>
+  </div>
+  <p class="field-hint" style="margin-top:-8px; margin-bottom:12px;">{{ t('available_to_sell_sub') }}</p>
+  {% if products %}
+  <div class="product-list">
+    {% for p in products %}
+    <div class="product-row" style="cursor:default;">
+      <div class="product-row-main">
+        <div class="product-row-name">{{ p.name }}</div>
+        <div class="product-row-sub">
+          {% if p.available_qty > 0 %}
+          <span class="available-count-text">{{ t('available_count', count=p.available_qty|round(0)|int) }}</span>
+          {% else %}
+          <span class="sold-out-text">{{ t('sold_out_label') }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="product-row-right">
+        <span class="product-row-price mono">${{ '%.2f'|format(p.price) }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">{{ t('no_products_warning') }}</div>
+  {% endif %}
+</div>
+
+<div class="section">
   <div class="card">
     {% if products %}
 
@@ -22,10 +52,15 @@
       <h4 class="recipe-subhead">{{ t(group.label_key) }}</h4>
       <div class="product-tap-grid">
         {% for p in group.products %}
-        <div class="product-tap-card" data-id="{{ p.id }}" data-name="{{ p.name }}" data-price="{{ p.price }}">
+        <div class="product-tap-card {{ 'sold-out' if p.available_qty <= 0 }}" data-id="{{ p.id }}" data-name="{{ p.name }}" data-price="{{ p.price }}" data-available="{{ p.available_qty }}">
           <span class="ptc-qty-badge" style="display:none;">0</span>
           <div class="ptc-name">{{ p.name }}</div>
           <div class="ptc-price mono">${{ '%.2f'|format(p.price) }}</div>
+          {% if p.available_qty > 0 %}
+          <div class="ptc-availability">{{ t('available_count', count=p.available_qty|round(0)|int) }}</div>
+          {% else %}
+          <div class="ptc-availability sold-out-text">{{ t('sold_out_label') }}</div>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
@@ -95,8 +130,14 @@
 
         const cart = {}; // product_id -> qty
 
+        function availableFor(id) {
+          const card = cards.find(function (c) { return c.dataset.id === id; });
+          return card ? (parseFloat(card.dataset.available) || 0) : 0;
+        }
+
         function setQty(id, qty) {
-          if (qty <= 0) { delete cart[id]; } else { cart[id] = qty; }
+          const capped = Math.min(qty, availableFor(id));
+          if (capped <= 0) { delete cart[id]; } else { cart[id] = capped; }
           render();
         }
 
