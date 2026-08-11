@@ -1,0 +1,87 @@
+diff --git a/app.py b/app.py
+index 147a234..d3afa05 100644
+--- a/app.py
++++ b/app.py
+@@ -714,12 +714,30 @@ def restock_material(material_id):
+ @login_required
+ def delete_material(material_id):
+     db = get_db()
++    # Only an *active* product's recipe blocks deletion. An archived
++    # product (soft-deleted because it has order history — see
++    # delete_product) can still hold old product_ingredients rows, but
++    # those shouldn't lock up a material she's trying to remove; she's not
++    # using that product day-to-day anymore.
+     in_use = db.execute(
+-        "SELECT COUNT(*) as c FROM product_ingredients WHERE material_id = ?", (material_id,)
++        "SELECT COUNT(*) as c FROM product_ingredients "
++        "JOIN products ON products.id = product_ingredients.product_id "
++        "WHERE product_ingredients.material_id = ? AND products.active = 1",
++        (material_id,),
+     ).fetchone()["c"]
+     if in_use:
+         flash(g.t("flash_material_in_use"), "error")
+         return redirect(url_for("materials"))
++    # Clear any leftover recipe rows from archived products before deleting
++    # — the database's foreign key would otherwise still block the delete
++    # even though those products are no longer active. If one of those
++    # products gets reactivated later (see add_product), she'll just need
++    # to re-add this ingredient to its recipe.
++    db.execute(
++        "DELETE FROM product_ingredients WHERE material_id = ? AND product_id IN "
++        "(SELECT id FROM products WHERE active = 0)",
++        (material_id,),
++    )
+     db.execute("DELETE FROM stock_transactions WHERE material_id = ?", (material_id,))
+     db.execute("DELETE FROM materials WHERE id = ?", (material_id,))
+     db.commit()
+@@ -858,6 +876,21 @@ def add_product():
+     else:
+         price = 0.0
+ 
++    # A product that was "deleted" while it had order history is actually
++    # archived, not removed (see delete_product) — its name is still taken.
++    # Re-adding the same name should bring it back rather than fail with a
++    # confusing duplicate error, since from her side she just deleted it a
++    # moment ago and expects to be able to use that name again.
++    existing = db.execute("SELECT id, active FROM products WHERE name = ?", (name,)).fetchone()
++    if existing and not existing["active"]:
++        db.execute(
++            "UPDATE products SET active = 1, price = ?, category = ? WHERE id = ?",
++            (price, category, existing["id"]),
++        )
++        db.commit()
++        flash(g.t("flash_product_reactivated", name=name), "success")
++        return redirect(url_for("products"))
++
+     try:
+         db.execute("INSERT INTO products (name, price, category) VALUES (?, ?, ?)", (name, price, category))
+         db.commit()
+@@ -871,16 +904,24 @@ def add_product():
+ @app.route("/products/<int:product_id>/recipe/add", methods=["POST"])
+ @login_required
+ def add_recipe_ingredient(product_id):
++    """Records how much of one material a single unit of this product uses
++    — e.g. "Salt: 0.3g per unit" — entered directly rather than as a batch
++    that then gets divided by a yield count. Stored in the same batch_qty /
++    yield_count / quantity_per_unit columns for compatibility (batch_qty is
++    just set equal to the per-unit amount, with yield_count fixed at 1), so
++    no schema change is needed and older recipes entered via batch math
++    still display and edit correctly (quantity_per_unit is still the true
++    per-unit figure either way)."""
+     db = get_db()
+     material_id = request.form.get("material_id")
+-    batch_qty = float(request.form.get("batch_qty") or 0)
+-    yield_count = float(request.form.get("yield_count") or 0)
++    quantity_per_unit = float(request.form.get("quantity_per_unit") or 0)
+ 
+-    if not material_id or batch_qty <= 0 or yield_count <= 0:
++    if not material_id or quantity_per_unit <= 0:
+         flash(g.t("flash_recipe_invalid"), "error")
+         return redirect(url_for("products"))
+ 
+-    quantity_per_unit = batch_qty / yield_count
++    batch_qty = quantity_per_unit
++    yield_count = 1
+ 
+     existing = db.execute(
+         "SELECT id FROM product_ingredients WHERE product_id = ? AND material_id = ?",

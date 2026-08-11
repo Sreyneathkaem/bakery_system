@@ -714,12 +714,30 @@ def restock_material(material_id):
 @login_required
 def delete_material(material_id):
     db = get_db()
+    # Only an *active* product's recipe blocks deletion. An archived
+    # product (soft-deleted because it has order history — see
+    # delete_product) can still hold old product_ingredients rows, but
+    # those shouldn't lock up a material she's trying to remove; she's not
+    # using that product day-to-day anymore.
     in_use = db.execute(
-        "SELECT COUNT(*) as c FROM product_ingredients WHERE material_id = ?", (material_id,)
+        "SELECT COUNT(*) as c FROM product_ingredients "
+        "JOIN products ON products.id = product_ingredients.product_id "
+        "WHERE product_ingredients.material_id = ? AND products.active = 1",
+        (material_id,),
     ).fetchone()["c"]
     if in_use:
         flash(g.t("flash_material_in_use"), "error")
         return redirect(url_for("materials"))
+    # Clear any leftover recipe rows from archived products before deleting
+    # — the database's foreign key would otherwise still block the delete
+    # even though those products are no longer active. If one of those
+    # products gets reactivated later (see add_product), she'll just need
+    # to re-add this ingredient to its recipe.
+    db.execute(
+        "DELETE FROM product_ingredients WHERE material_id = ? AND product_id IN "
+        "(SELECT id FROM products WHERE active = 0)",
+        (material_id,),
+    )
     db.execute("DELETE FROM stock_transactions WHERE material_id = ?", (material_id,))
     db.execute("DELETE FROM materials WHERE id = ?", (material_id,))
     db.commit()
@@ -857,6 +875,21 @@ def add_product():
         price = riel_to_usd(float(price_riel_raw))
     else:
         price = 0.0
+
+    # A product that was "deleted" while it had order history is actually
+    # archived, not removed (see delete_product) — its name is still taken.
+    # Re-adding the same name should bring it back rather than fail with a
+    # confusing duplicate error, since from her side she just deleted it a
+    # moment ago and expects to be able to use that name again.
+    existing = db.execute("SELECT id, active FROM products WHERE name = ?", (name,)).fetchone()
+    if existing and not existing["active"]:
+        db.execute(
+            "UPDATE products SET active = 1, price = ?, category = ? WHERE id = ?",
+            (price, category, existing["id"]),
+        )
+        db.commit()
+        flash(g.t("flash_product_reactivated", name=name), "success")
+        return redirect(url_for("products"))
 
     try:
         db.execute("INSERT INTO products (name, price, category) VALUES (?, ?, ?)", (name, price, category))
