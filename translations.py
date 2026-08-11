@@ -335,6 +335,19 @@ TR = {
         "total_paid_usd_ph": "សរុបបង់ ($)",
         "total_paid_riel_ph": "សរុបបង់ (៛)",
         "total_paid_hint": "ជាជម្រើស៖ បញ្ចូលចំនួនទឹកប្រាក់សរុបដែលបានបង់សម្រាប់ការទិញនេះ ដើម្បីអោយប្រព័ន្ធគណនាថ្លៃដើម/ឯកតាឡើងវិញដោយស្វ័យប្រវត្តិ (មធ្យមភាគទម្ងន់)។",
+
+        # Reset test data (Settings page)
+        "reset_title": "កំណត់ទិន្នន័យសាកល្បងឡើងវិញ",
+        "reset_sub": "សម្រាប់សម្អាតទិន្នន័យសាកល្បង មុននឹងអោយប្អូនស្រីចាប់ផ្តើមប្រើប្រាស់ជាក់ស្តែង។ សកម្មភាពនេះមិនអាចត្រឡប់វិញបានទេ។",
+        "reset_scope_orders": "លុបការកម្ម៉ង់ និងវិក្កយបត្រទាំងអស់",
+        "reset_scope_expenses": "លុបចំណាយដែលបានកត់ត្រាទាំងអស់",
+        "reset_scope_available": "កំណត់ចំនួនផលិតផលអាចលក់បានរបស់ផលិតផលនីមួយៗឡើងវិញទៅសូន្យ",
+        "reset_keeps_note": "វត្ថុធាតុដើម ផលិតផល រូបមន្ត និងស្តុក/ថ្លៃដើមវត្ថុធាតុដើម នឹងមិនរងផលប៉ះពាល់ទេ។",
+        "reset_confirm_label": "វាយ RESET ដើម្បីបញ្ជាក់",
+        "reset_btn": "កំណត់ទិន្នន័យសាកល្បងឡើងវិញ",
+        "reset_final_confirm": "សកម្មភាពនេះមិនអាចត្រឡប់វិញបានទេ។ តើអ្នកប្រាកដទេ?",
+        "reset_confirm_mismatch": "អក្សរបញ្ជាក់មិនត្រឹមត្រូវទេ។ សូមវាយ RESET។",
+        "reset_success": "បានកំណត់ទិន្នន័យសាកល្បងឡើងវិញដោយជោគជ័យ។",
     },
     "en": {
         "app_name": "ពងទាប្រៃបេកខេរី (Salted Duck Egg Bakery)",
@@ -660,6 +673,19 @@ TR = {
         "total_paid_usd_ph": "Total paid ($)",
         "total_paid_riel_ph": "Total paid (៛)",
         "total_paid_hint": "Optional: enter the total amount paid for this restock, and the app will recalculate cost/unit automatically (weighted average).",
+
+        # Reset test data (Settings page)
+        "reset_title": "Reset test data",
+        "reset_sub": "For clearing out test data before your sister starts using this for real. This can't be undone.",
+        "reset_scope_orders": "Deletes all orders and invoices",
+        "reset_scope_expenses": "Deletes all logged expenses",
+        "reset_scope_available": "Resets every product's available-to-sell quantity back to zero",
+        "reset_keeps_note": "Materials, products, recipes, and material stock/cost are not affected.",
+        "reset_confirm_label": "Type RESET to confirm",
+        "reset_btn": "Reset test data",
+        "reset_final_confirm": "This can't be undone. Are you sure?",
+        "reset_confirm_mismatch": "Confirmation text didn't match. Type RESET.",
+        "reset_success": "Test data has been reset.",
     },
 }
 

@@ -852,6 +852,15 @@ button.danger-btn:hover { background: var(--danger-bg); }
   min-width: 24px;
 }
 
+.recipe-sentence-row select.recipe-unit-select {
+  flex: 0 0 74px;
+  min-width: 74px;
+  width: 74px;
+  font-size: 0.92rem;
+  padding: 10px 6px;
+  text-align: center;
+}
+
 .recipe-makes-word {
   color: var(--crust);
   font-weight: 600;

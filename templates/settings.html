@@ -103,4 +103,35 @@
   })();
 </script>
 
+<div class="section">
+  <div class="card" style="border:1px solid var(--danger-bg);">
+    <h3 style="color:var(--danger);">{{ t('reset_title') }}</h3>
+    <p class="field-hint" style="margin-bottom:12px;">{{ t('reset_sub') }}</p>
+    <ul style="font-size:0.88rem; color:#6B5C4A; margin:0 0 14px 18px; padding:0;">
+      <li>{{ t('reset_scope_orders') }}</li>
+      <li>{{ t('reset_scope_expenses') }}</li>
+      <li>{{ t('reset_scope_available') }}</li>
+    </ul>
+    <p class="field-hint" style="margin-bottom:16px;">{{ t('reset_keeps_note') }}</p>
+
+    <form method="POST" action="{{ url_for('reset_test_data') }}" id="reset-form" onsubmit="return confirm('{{ t('reset_final_confirm') }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field" style="margin-bottom:12px; max-width:240px;">
+        <label for="confirm_text">{{ t('reset_confirm_label') }}</label>
+        <input type="text" id="confirm_text" name="confirm_text" placeholder="RESET" autocomplete="off">
+      </div>
+      <button type="submit" id="reset-submit-btn" class="danger-btn" style="padding:10px 18px; font-size:0.9rem;" disabled>{{ t('reset_btn') }}</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const input = document.getElementById('confirm_text');
+    const btn = document.getElementById('reset-submit-btn');
+    input.addEventListener('input', function () {
+      btn.disabled = input.value.trim() !== 'RESET';
+    });
+  })();
+</script>
+
 {% endblock %}

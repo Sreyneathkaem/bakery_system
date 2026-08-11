@@ -236,6 +236,27 @@ def riel_to_usd(riel):
     return riel / KHR_PER_USD if KHR_PER_USD else 0
 
 
+# Recipe amounts can be typed in a different (but compatible) unit than how
+# a material's stock is tracked — e.g. "0.3 g" of salt even though salt's
+# stock is kept in kg, since that's a far more natural number to type than
+# "0.0003 kg". Every other calculation (stock deduction, cost per unit)
+# assumes quantity_per_unit is in the material's own stock unit, so
+# whatever's entered gets converted back to that unit before it's stored.
+UNIT_CONVERSION_FACTORS = {
+    ("g", "kg"): 0.001,
+    ("kg", "g"): 1000.0,
+    ("ml", "l"): 0.001,
+    ("l", "ml"): 1000.0,
+}
+
+
+def convert_amount_to_base_unit(amount, entered_unit, base_unit):
+    if not entered_unit or entered_unit == base_unit:
+        return amount
+    factor = UNIT_CONVERSION_FACTORS.get((entered_unit, base_unit))
+    return amount * factor if factor is not None else amount
+
+
 QR_MIMETYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
 
 
@@ -917,19 +938,29 @@ def add_product():
 def add_recipe_ingredient(product_id):
     """Records how much of one material a single unit of this product uses
     — e.g. "Salt: 0.3g per unit" — entered directly rather than as a batch
-    that then gets divided by a yield count. Stored in the same batch_qty /
-    yield_count / quantity_per_unit columns for compatibility (batch_qty is
-    just set equal to the per-unit amount, with yield_count fixed at 1), so
-    no schema change is needed and older recipes entered via batch math
-    still display and edit correctly (quantity_per_unit is still the true
-    per-unit figure either way)."""
+    that then gets divided by a yield count. The amount can be typed in any
+    unit compatible with the material's own stock unit (e.g. grams for a
+    material tracked in kg) and gets converted back before storing, since
+    every other calculation assumes quantity_per_unit is in that stock
+    unit. Stored in the same batch_qty / yield_count / quantity_per_unit
+    columns for compatibility (batch_qty is just set equal to the per-unit
+    amount, with yield_count fixed at 1), so no schema change is needed and
+    older recipes entered via batch math still display and edit correctly."""
     db = get_db()
     material_id = request.form.get("material_id")
-    quantity_per_unit = float(request.form.get("quantity_per_unit") or 0)
+    entered_unit = request.form.get("entered_unit", "").strip()
+    try:
+        entered_amount = float(request.form.get("quantity_per_unit") or 0)
+    except ValueError:
+        entered_amount = 0
 
-    if not material_id or quantity_per_unit <= 0:
+    if not material_id or entered_amount <= 0:
         flash(g.t("flash_recipe_invalid"), "error")
         return redirect(url_for("products"))
+
+    material = db.execute("SELECT unit FROM materials WHERE id = ?", (material_id,)).fetchone()
+    base_unit = material["unit"] if material else entered_unit
+    quantity_per_unit = convert_amount_to_base_unit(entered_amount, entered_unit, base_unit)
 
     batch_qty = quantity_per_unit
     yield_count = 1
@@ -1479,6 +1510,29 @@ def upload_qr():
 def delete_qr():
     clear_qr_upload()
     flash(g.t("qr_delete_success"), "success")
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/reset-test-data", methods=["POST"])
+@login_required
+def reset_test_data():
+    """Wipes sales/money data only — orders, order items, expenses, and
+    every product's available-to-sell quantity. Materials, products,
+    recipes, and material stock/cost are deliberately left untouched, since
+    those represent real setup rather than test transactions. Requires
+    typing the literal word RESET as a confirmation, on top of a JS confirm
+    dialog, since this can't be undone."""
+    if request.form.get("confirm_text", "").strip() != "RESET":
+        flash(g.t("reset_confirm_mismatch"), "error")
+        return redirect(url_for("settings"))
+
+    db = get_db()
+    db.execute("DELETE FROM order_items")
+    db.execute("DELETE FROM orders")
+    db.execute("DELETE FROM expenses")
+    db.execute("UPDATE products SET available_qty = 0")
+    db.commit()
+    flash(g.t("reset_success"), "success")
     return redirect(url_for("settings"))
 
 

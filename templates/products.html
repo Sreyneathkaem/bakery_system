@@ -106,16 +106,44 @@
     updateRecipeRow(productId);
   }
 
-  // Keeps the unit label ("kg", "g"...) in sync with whichever material is
-  // selected, so the amount she types is unambiguous — e.g. "0.3" next to
-  // "g" instead of a bare number.
+  // Recipe amounts can be typed in a different (but compatible) unit than
+  // how the material's stock is tracked — e.g. "0.3 g" of salt even though
+  // salt's stock is kept in kg, since that's a far more natural number to
+  // type than "0.0003 kg". Only units that actually convert into the
+  // material's stored unit are offered.
+  const UNIT_COMPATIBLE = {
+    kg: ['kg', 'g'],
+    g: ['g', 'kg'],
+    l: ['l', 'ml'],
+    ml: ['ml', 'l'],
+    pcs: ['pcs'],
+    pack: ['pack'],
+    box: ['box'],
+  };
+
   function updateRecipeRow(productId) {
     const materialSelect = document.getElementById('recipe-material-' + productId);
-    const unitLabel = document.getElementById('recipe-unit-' + productId);
+    const unitSelect = document.getElementById('recipe-unit-' + productId);
 
     const selectedOption = materialSelect.options[materialSelect.selectedIndex];
-    const unit = selectedOption ? (selectedOption.dataset.unit || '') : '';
-    unitLabel.textContent = unit || '{{ t("unit_choose") }}';
+    const baseUnit = selectedOption ? (selectedOption.dataset.unit || '') : '';
+    const choices = baseUnit ? (UNIT_COMPATIBLE[baseUnit] || [baseUnit]) : [];
+
+    unitSelect.innerHTML = '';
+    if (choices.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '{{ t("unit_choose") }}';
+      unitSelect.appendChild(opt);
+      return;
+    }
+    choices.forEach(function (u) {
+      const opt = document.createElement('option');
+      opt.value = u;
+      opt.textContent = u;
+      unitSelect.appendChild(opt);
+    });
+    unitSelect.value = baseUnit;
   }
 </script>
 
@@ -191,7 +219,9 @@
             {% endfor %}
           </select>
           <input type="number" step="any" name="quantity_per_unit" id="recipe-amount-{{ item.product.id }}" placeholder="0.3" required class="recipe-num-input">
-          <span class="recipe-unit-label" id="recipe-unit-{{ item.product.id }}">{{ t('unit_choose') }}</span>
+          <select name="entered_unit" id="recipe-unit-{{ item.product.id }}" class="recipe-unit-select" required>
+            <option value="">{{ t('unit_choose') }}</option>
+          </select>
           <span class="recipe-makes-word">{{ t('per_unit_suffix') }}</span>
           <button type="submit" class="secondary">{{ t('add_to_recipe_btn') }}</button>
         </div>
