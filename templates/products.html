@@ -100,36 +100,22 @@
     chevron.classList.toggle('open', !isOpen);
   }
 
-  function fillRecipeForm(productId, materialId, batchQty, yieldCount) {
+  function fillRecipeForm(productId, materialId, quantityPerUnit) {
     document.getElementById('recipe-material-' + productId).value = materialId;
-    document.getElementById('recipe-batch-' + productId).value = batchQty;
-    document.getElementById('recipe-yield-' + productId).value = yieldCount;
+    document.getElementById('recipe-amount-' + productId).value = quantityPerUnit;
     updateRecipeRow(productId);
   }
 
-  // Keeps the unit label ("kg", "pcs"...) in sync with whichever material is
-  // selected, and shows a live "≈ X per piece" preview so the shop owner can
-  // sanity-check the math before submitting instead of guessing blind.
+  // Keeps the unit label ("kg", "g"...) in sync with whichever material is
+  // selected, so the amount she types is unambiguous — e.g. "0.3" next to
+  // "g" instead of a bare number.
   function updateRecipeRow(productId) {
     const materialSelect = document.getElementById('recipe-material-' + productId);
-    const batchInput = document.getElementById('recipe-batch-' + productId);
-    const yieldInput = document.getElementById('recipe-yield-' + productId);
     const unitLabel = document.getElementById('recipe-unit-' + productId);
-    const preview = document.getElementById('recipe-preview-' + productId);
 
     const selectedOption = materialSelect.options[materialSelect.selectedIndex];
     const unit = selectedOption ? (selectedOption.dataset.unit || '') : '';
     unitLabel.textContent = unit || '{{ t("unit_choose") }}';
-
-    const qty = parseFloat(batchInput.value);
-    const yieldN = parseFloat(yieldInput.value);
-    if (unit && qty > 0 && yieldN > 0) {
-      preview.textContent = '≈ ' + (qty / yieldN).toFixed(4) + unit + '{{ t("per_unit_suffix") }}';
-      preview.classList.add('has-value');
-    } else {
-      preview.textContent = '';
-      preview.classList.remove('has-value');
-    }
   }
 </script>
 
@@ -185,9 +171,8 @@
 
       <div style="margin-bottom:14px;">
         {% for r in item.recipe %}
-        <span class="recipe-chip recipe-chip-editable" onclick="event.stopPropagation(); fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.batch_qty }}, {{ r.yield_count }})">
-          {{ r.batch_qty|round(3) }}{{ r.unit }} {{ r.material_name }} {{ t('makes_label') }} {{ r.yield_count|round(0)|int }} {{ t('loaves_unit') }}
-          <span class="chip-sub">({{ r.quantity_per_unit|round(4) }}{{ r.unit }}{{ t('per_unit_suffix') }})</span>
+        <span class="recipe-chip recipe-chip-editable" onclick="event.stopPropagation(); fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.quantity_per_unit }})">
+          {{ r.material_name }} — {{ r.quantity_per_unit|round(4) }}{{ r.unit }} {{ t('per_unit_suffix') }}
           <form method="POST" action="{{ url_for('remove_recipe_ingredient', ingredient_id=r.id) }}" class="inline-form" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" title="{{ t('delete_btn') }}">&times;</button>
           </form>
@@ -205,14 +190,12 @@
             <option value="{{ m.id }}" data-unit="{{ m.unit }}">{{ m.name }}</option>
             {% endfor %}
           </select>
-          <input type="number" step="any" name="batch_qty" id="recipe-batch-{{ item.product.id }}" placeholder="1" required class="recipe-num-input" oninput="updateRecipeRow({{ item.product.id }})">
+          <input type="number" step="any" name="quantity_per_unit" id="recipe-amount-{{ item.product.id }}" placeholder="0.3" required class="recipe-num-input">
           <span class="recipe-unit-label" id="recipe-unit-{{ item.product.id }}">{{ t('unit_choose') }}</span>
-          <span class="recipe-makes-word">{{ t('makes_label') }}</span>
-          <input type="number" step="any" name="yield_count" id="recipe-yield-{{ item.product.id }}" placeholder="20" required class="recipe-num-input" oninput="updateRecipeRow({{ item.product.id }})">
-          <span class="recipe-unit-label">{{ t('loaves_unit') }}</span>
+          <span class="recipe-makes-word">{{ t('per_unit_suffix') }}</span>
           <button type="submit" class="secondary">{{ t('add_to_recipe_btn') }}</button>
         </div>
-        <p class="field-hint recipe-live-preview" id="recipe-preview-{{ item.product.id }}"></p>
+        <p class="field-hint">{{ t('recipe_hint') }}</p>
       </form>
     </div>
     {% endfor %}

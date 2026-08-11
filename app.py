@@ -871,16 +871,24 @@ def add_product():
 @app.route("/products/<int:product_id>/recipe/add", methods=["POST"])
 @login_required
 def add_recipe_ingredient(product_id):
+    """Records how much of one material a single unit of this product uses
+    — e.g. "Salt: 0.3g per unit" — entered directly rather than as a batch
+    that then gets divided by a yield count. Stored in the same batch_qty /
+    yield_count / quantity_per_unit columns for compatibility (batch_qty is
+    just set equal to the per-unit amount, with yield_count fixed at 1), so
+    no schema change is needed and older recipes entered via batch math
+    still display and edit correctly (quantity_per_unit is still the true
+    per-unit figure either way)."""
     db = get_db()
     material_id = request.form.get("material_id")
-    batch_qty = float(request.form.get("batch_qty") or 0)
-    yield_count = float(request.form.get("yield_count") or 0)
+    quantity_per_unit = float(request.form.get("quantity_per_unit") or 0)
 
-    if not material_id or batch_qty <= 0 or yield_count <= 0:
+    if not material_id or quantity_per_unit <= 0:
         flash(g.t("flash_recipe_invalid"), "error")
         return redirect(url_for("products"))
 
-    quantity_per_unit = batch_qty / yield_count
+    batch_qty = quantity_per_unit
+    yield_count = 1
 
     existing = db.execute(
         "SELECT id FROM product_ingredients WHERE product_id = ? AND material_id = ?",
