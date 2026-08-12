@@ -36,8 +36,8 @@ services:
       # Leave blank to skip — the Share button (works with Telegram,
       # Messenger, WhatsApp, etc. from the phone's share sheet) works fine
       # without any of this. See README.md "Telegram Bot setup".
-      - TELEGRAM_BOT_TOKEN=
-      - TELEGRAM_CHAT_ID=
+      - TELEGRAM_BOT_TOKEN = 8901752315:AAHhToBu4Duupg6mJzxtVJNTYZ_42EdguzI
+      - TELEGRAM_CHAT_ID = 1085509119
 
   db:
     image: postgres:16-alpine
