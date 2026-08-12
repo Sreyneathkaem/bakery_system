@@ -200,11 +200,6 @@
       {% if item.recipe and item.limiting_material %}
       <div class="material-card-sub">{{ t('limited_by_label') }}: {{ item.limiting_material }}</div>
       {% endif %}
-      {% for sm in item.shared_materials %}
-      <div class="shared-warning">
-        ⚠ {{ t('shared_material_warning', material=sm.material, products=sm.shared_with|join(', ')) }}
-      </div>
-      {% endfor %}
 
       <h4 class="recipe-subhead" style="margin-top:14px;">{{ t('recipe_title') }}</h4>
       <p class="recipe-hint">{{ t('recipe_hint') }}</p>
