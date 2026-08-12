@@ -1501,7 +1501,7 @@ button.danger-btn:hover { background: var(--danger-bg); }
 }
 
 .invoice-qr-img {
-  width: 380px;
+  width: 220px;
   max-width: 100%;
   aspect-ratio: 1 / 1;
   height: auto;
