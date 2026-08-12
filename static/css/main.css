@@ -50,6 +50,29 @@ html, body {
   font-family: var(--font-body);
   font-size: 16px;
   line-height: 1.5;
+  /* Safety net: stops any one element (a long unbroken word, a slightly
+     too-wide row) from causing the whole page to scroll sideways on a
+     phone — that's a much more jarring bug than whatever overflowed. */
+  overflow-x: hidden;
+  width: 100%;
+}
+
+/* Reserves space under the now fixed-position header so page content
+   doesn't start out hidden behind it. This default covers the common
+   single-line header height + typical safe-area-inset-top; base.html's
+   inline script overwrites --header-height with the header's *actual*
+   measured height (it varies with safe-area size and whether the header
+   wraps to two lines on very narrow screens), so this is just the value
+   used for the first paint before that script runs. */
+html {
+  --header-height: 64px;
+  /* Keeps iOS's rubber-band overscroll from revealing blank space beyond
+     the top/bottom of the page — helps the fixed header above read as
+     truly locked in place rather than something the bounce can peek past. */
+  overscroll-behavior-y: contain;
+}
+body {
+  padding-top: var(--header-height);
 }
 
 a { color: inherit; }
@@ -73,12 +96,27 @@ h3 { font-size: 1.05rem; }
   background: var(--rye);
   color: var(--flour);
   padding: 0 24px;
+  /* When installed as a home-screen "web app" (standalone PWA), the status
+     bar goes translucent (see apple-mobile-web-app-status-bar-style) and
+     draws over the page, so without this the clock/notch/Dynamic Island
+     sits on top of the logo and nav instead of above them. */
+  padding-top: env(safe-area-inset-top, 0);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  position: sticky;
+  /* Fixed instead of sticky: in iOS's installed "web app" mode, sticky
+     headers can visibly detach and float during momentum/rubber-band
+     scrolling (a known WebKit standalone-mode quirk) — fixed keeps it
+     truly locked to the viewport instead. body/main get a matching
+     top padding (set from JS, see base.html) so content isn't hidden
+     underneath it. */
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
   z-index: 30;
+  box-shadow: var(--shadow);
 }
 
 .brand {
@@ -185,6 +223,10 @@ main {
   max-width: 1080px;
   margin: 0 auto;
   padding: 28px 20px 60px;
+  /* Keeps content clear of the notch/rounded corners in landscape, where
+     the safe area sits on the left/right instead of top/bottom. */
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
 }
 
 .page-title {
@@ -217,11 +259,18 @@ main {
     display: flex;
     position: fixed;
     left: 0; right: 0; bottom: 0;
-    height: var(--bottom-nav-height);
+    /* height alone would have the safe-area padding-bottom below carve
+       into these 60px (box-sizing: border-box), squeezing icons/labels
+       into whatever's left over on phones with a home indicator — this
+       adds the safe area on top instead, so the tappable icon row always
+       gets its full intended height. */
+    height: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
     background: var(--rye);
     border-top: 1px solid rgba(255,255,255,0.08);
     z-index: 40;
     padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-left: env(safe-area-inset-left, 0);
+    padding-right: env(safe-area-inset-right, 0);
   }
 
   .bottom-nav a {
@@ -246,8 +295,8 @@ main {
     color: var(--wheat);
   }
 
-  body { padding-bottom: var(--bottom-nav-height); }
-  main { padding-bottom: calc(var(--bottom-nav-height) + 24px); }
+  body { padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px)); }
+  main { padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 24px); }
 }
 
 /* ---------- Flash messages ---------- */
@@ -593,8 +642,16 @@ td.num, th.num { font-family: var(--font-mono); text-align: right; }
   margin-top: 14px;
 }
 
+.history-table-wrap {
+  /* Lets the 4-column history table scroll sideways on narrow phones
+     instead of squeezing text until it wraps oddly or forcing the whole
+     page to scroll horizontally. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .history-table {
   width: 100%;
+  min-width: 480px;
   background: var(--flour);
 }
 .history-table th, .history-table td {
@@ -1193,11 +1250,17 @@ button.danger-btn:hover { background: var(--danger-bg); }
 
 .login-wrap {
   min-height: 100vh;
+  /* 100vh on mobile browsers is measured against the largest possible
+     viewport (address bar hidden), so the page can end up taller than
+     what's actually visible and the card looks like it "jumps" as the
+     address bar shows/hides. 100dvh tracks the real visible viewport;
+     older browsers that don't understand it just keep the 100vh above. */
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--rye);
-  padding: 20px;
+  padding: max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px));
 }
 
 .login-card {

@@ -22,7 +22,7 @@
         <div class="bake-product-name">{{ p.name }}</div>
         <div class="qty-stepper">
           <button type="button" class="qty-step-btn" data-action="dec" data-pid="{{ p.id }}">−</button>
-          <input type="number" min="0" step="1" value="0" inputmode="numeric" class="bake-qty-input mono" id="bake-qty-{{ p.id }}" data-pid="{{ p.id }}">
+          <input type="number" min="0" step="any" value="0" inputmode="decimal" class="bake-qty-input mono" id="bake-qty-{{ p.id }}" data-pid="{{ p.id }}">
           <button type="button" class="qty-step-btn" data-action="inc" data-pid="{{ p.id }}">+</button>
         </div>
       </div>
@@ -55,11 +55,13 @@
 
         function getQty(pid) {
           const el = document.getElementById('bake-qty-' + pid);
-          return el ? (parseInt(el.value, 10) || 0) : 0;
+          return el ? (parseFloat(el.value) || 0) : 0;
         }
         function setQty(pid, qty) {
           const el = document.getElementById('bake-qty-' + pid);
-          if (el) el.value = Math.max(0, qty);
+          // Round away tiny float noise (e.g. 2.1 - 1 = 1.0999999999998)
+          // before writing back, so the +/- buttons stay clean at .1 steps.
+          if (el) el.value = Math.round(Math.max(0, qty) * 100) / 100;
           recalc();
         }
 
@@ -375,6 +377,7 @@
     <div id="history-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
       {% set hist = history_by_material.get(m.id, []) %}
       {% if hist %}
+      <div class="history-table-wrap">
       <table class="history-table">
         <thead>
           <tr>
@@ -401,6 +404,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% else %}
       <div class="empty-state">{{ t('history_empty') }}</div>
       {% endif %}

@@ -23,8 +23,8 @@
     <nav class="tabs">
       <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">{{ t('nav_dashboard') }}</a>
       <a href="{{ url_for('materials') }}" class="{{ 'active' if request.endpoint == 'materials' }}">{{ t('nav_materials') }}</a>
-      <a href="{{ url_for('products') }}" class="{{ 'active' if request.endpoint == 'products' }}">{{ t('nav_products') }}</a>
       <a href="{{ url_for('orders') }}" class="{{ 'active' if request.endpoint in ['orders', 'edit_order', 'order_invoice'] }}">{{ t('nav_orders') }}</a>
+      <a href="{{ url_for('products') }}" class="{{ 'active' if request.endpoint == 'products' }}">{{ t('nav_products') }}</a>
       <a href="{{ url_for('reports') }}" class="{{ 'active' if request.endpoint == 'reports' }}">{{ t('nav_reports') }}</a>
     </nav>
     <div class="header-right">
@@ -49,6 +49,30 @@
 
     {% block content %}{% endblock %}
   </main>
+
+  <script>
+    // The header is position:fixed (locked to the viewport, doesn't scroll
+    // away, doesn't drift during iOS "web app" rubber-band bounce). Its
+    // real height varies — safe-area-inset-top differs by device, and it
+    // can wrap to two lines on very narrow screens — so we measure it and
+    // push that exact value into --header-height, which body's
+    // padding-top uses to keep content clear of it. Runs again on resize/
+    // orientation change since the safe-area amount can change (e.g.
+    // rotating a notched phone).
+    (function () {
+      var header = document.querySelector('.app-header');
+      if (!header) return;
+      function syncHeaderHeight() {
+        document.documentElement.style.setProperty('--header-height', header.offsetHeight + 'px');
+      }
+      syncHeaderHeight();
+      window.addEventListener('resize', syncHeaderHeight);
+      window.addEventListener('orientationchange', syncHeaderHeight);
+      if (window.ResizeObserver) {
+        new ResizeObserver(syncHeaderHeight).observe(header);
+      }
+    })();
+  </script>
 
   <!-- Mobile-only bottom nav: 5 big thumb-friendly targets instead of the
        scrolling top tab row, so getting anywhere is a single tap. -->

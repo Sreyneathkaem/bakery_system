@@ -788,7 +788,7 @@ def confirm_bake():
     leave stock now; selling on Orders no longer touches materials directly,
     since that already happened here."""
     db = get_db()
-    lines = parse_order_form_lines(request.form)  # same product_id[]/quantity[] shape as an order
+    lines = parse_order_form_lines(request.form, allow_decimal=True)  # same product_id[]/quantity[] shape as an order
 
     if not lines:
         flash(g.t("bake_no_items"), "error")
@@ -1090,8 +1090,12 @@ def orders():
     )
 
 
-def parse_order_form_lines(form):
-    """Reads product_id[]/quantity[] pairs from a submitted order form."""
+def parse_order_form_lines(form, allow_decimal=False):
+    """Reads product_id[]/quantity[] pairs from a submitted order form.
+    Customer orders keep whole-number quantities (you can't sell half a
+    loaf to one customer), but the bake planner allows decimals — a batch
+    might yield a fractional number of a product (e.g. 2.5kg of cake cut
+    into slices), so it passes allow_decimal=True."""
     product_ids = form.getlist("product_id[]")
     quantities = form.getlist("quantity[]")
     lines = []
@@ -1099,7 +1103,7 @@ def parse_order_form_lines(form):
         if not pid or not qty_raw:
             continue
         try:
-            qty = int(qty_raw)
+            qty = float(qty_raw) if allow_decimal else int(qty_raw)
         except ValueError:
             continue
         if qty <= 0:
