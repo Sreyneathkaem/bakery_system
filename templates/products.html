@@ -123,19 +123,21 @@
   // Recipe amounts can be typed in a different (but compatible) unit than
   // how the material's stock is tracked — e.g. "500 g" of flour even though
   // flour's stock is kept in kg, since that's a far more natural number to
-  // type than "0.5 kg". Only units that actually convert into the
-  // material's stored unit are offered. Families: weight (kg/g/mg),
-  // volume (l/dl/cl/ml), and count (pcs/dozen) — pack and box don't
-  // convert to anything. Each list starts with the material's own stored
-  // unit.
+  // type than "0.5 kg". Families: weight (kg/g/mg), volume (l/dl/cl/ml),
+  // and count (pcs/dozen) — pack and box don't convert to anything.
+  // Weight and volume also convert into EACH OTHER using the standard
+  // 1 L ≈ 1000 g water-density approximation (matches the backend and
+  // compute_batch_weight_g) — this is what lets water/milk/etc., normally
+  // stocked and reset in liters, be entered into a recipe in g/kg instead.
+  // Each list starts with the material's own stored unit.
   const UNIT_COMPATIBLE = {
-    kg: ['kg', 'g', 'mg'],
-    g: ['g', 'kg', 'mg'],
-    mg: ['mg', 'g', 'kg'],
-    l: ['l', 'dl', 'cl', 'ml'],
-    dl: ['dl', 'l', 'cl', 'ml'],
-    cl: ['cl', 'l', 'dl', 'ml'],
-    ml: ['ml', 'l', 'dl', 'cl'],
+    kg: ['kg', 'g', 'mg', 'l', 'dl', 'cl', 'ml'],
+    g: ['g', 'kg', 'mg', 'l', 'dl', 'cl', 'ml'],
+    mg: ['mg', 'g', 'kg', 'l', 'dl', 'cl', 'ml'],
+    l: ['l', 'dl', 'cl', 'ml', 'kg', 'g', 'mg'],
+    dl: ['dl', 'l', 'cl', 'ml', 'kg', 'g', 'mg'],
+    cl: ['cl', 'l', 'dl', 'ml', 'kg', 'g', 'mg'],
+    ml: ['ml', 'l', 'dl', 'cl', 'kg', 'g', 'mg'],
     pcs: ['pcs', 'dozen'],
     dozen: ['dozen', 'pcs'],
     pack: ['pack'],

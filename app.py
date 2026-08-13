@@ -324,7 +324,18 @@ def convert_amount_to_base_unit(amount, entered_unit, base_unit):
     if not entered_unit or entered_unit == base_unit:
         return amount
     factor = UNIT_CONVERSION_FACTORS.get((entered_unit, base_unit))
-    return amount * factor if factor is not None else amount
+    if factor is not None:
+        return amount * factor
+    # No same-family factor (e.g. material is tracked in liters but the
+    # recipe amount was entered in grams — water/milk/etc.). Fall back to
+    # the same 1 L ≈ 1000 g water-density approximation used elsewhere
+    # (see grams_per_material_unit) so weight <-> volume still converts
+    # instead of silently using the entered number unconverted.
+    entered_g = grams_per_material_unit(entered_unit)
+    base_g = grams_per_material_unit(base_unit)
+    if entered_g is not None and base_g is not None:
+        return amount * entered_g / base_g
+    return amount
 
 
 def grams_per_material_unit(unit):
