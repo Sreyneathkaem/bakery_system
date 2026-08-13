@@ -9,6 +9,7 @@ from functools import wraps
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 import requests
 from flask import Flask, render_template, request, redirect, url_for, session, g, flash, jsonify, send_file
 from flask_wtf.csrf import CSRFProtect, CSRFError
@@ -124,6 +125,13 @@ def now_local():
 # same db.execute(query, params).fetchone()/.fetchall() style as before —
 # only the placeholder syntax (? -> %s) and a couple of Postgres-specific
 # behaviors (transaction rollback on error, no lastrowid) needed handling.
+#
+# Connections are pooled (not reopened per request). Supabase is on its own
+# server, so every fresh connection pays a full TCP + TLS handshake — slow
+# on its own, and painfully slow on Render's free tier where limited CPU
+# makes the TLS negotiation take even longer. Opening one of those on every
+# single click is what was causing the ~10 second lag. A small pool keeps a
+# handful of connections open and reuses them across requests instead.
 
 class PGConnection:
     def __init__(self, conn):
@@ -149,26 +157,29 @@ class PGConnection:
     def rollback(self):
         self._conn.rollback()
 
-    def close(self):
-        self._conn.close()
+
+_db_pool = None
 
 
-def _connect():
-    """Opens a fresh Postgres connection and pins its session timezone to
-    Asia/Phnom_Penh, so NOW(), date(...) comparisons, and every timestamp
-    read back out are already in the shop's local time — no manual
-    conversion needed anywhere else in the app."""
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    cur.execute("SET TIME ZONE %s", (PG_TIMEZONE_NAME,))
-    conn.commit()
-    cur.close()
-    return conn
+def _get_pool():
+    """Creates the connection pool once, on first use. The session timezone
+    is set via a connection-startup option (not a per-request query), so
+    it's paid once when a physical connection is opened, not on every
+    request that reuses it from the pool."""
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=8,
+            dsn=DATABASE_URL,
+            options=f"-c timezone={PG_TIMEZONE_NAME}",
+        )
+    return _db_pool
 
 
 def get_db():
     if "db" not in g:
-        g.db = PGConnection(_connect())
+        g.db = PGConnection(_get_pool().getconn())
     return g.db
 
 
@@ -176,12 +187,29 @@ def get_db():
 def close_db(exception=None):
     db = g.pop("db", None)
     if db is not None:
-        db.close()
+        try:
+            # A request that errored may leave the connection mid-
+            # transaction; roll back before it goes back in the pool so the
+            # next request to reuse it starts clean.
+            if exception is not None:
+                db.rollback()
+            _get_pool().putconn(db._conn)
+        except psycopg2.Error:
+            # Connection is in a bad state (e.g. dropped by the network) —
+            # close it outright rather than returning it to the pool, so a
+            # fresh one gets opened next time instead of a broken one being
+            # handed out again.
+            try:
+                db._conn.close()
+            except Exception:
+                pass
 
 
 def init_db():
-    """Creates tables if they don't exist yet. Safe to run every startup."""
-    conn = _connect()
+    """Creates tables if they don't exist yet. Safe to run every startup.
+    Runs once at process startup, so a plain one-off connection is fine —
+    only per-request connections needed pooling."""
+    conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
     with open(SCHEMA_PATH, encoding="utf-8") as f:
         cur.execute(f.read())
@@ -194,7 +222,7 @@ def migrate_db():
     """Add columns introduced after the initial release, for anyone
     upgrading an existing database without losing data. Safe to call every
     startup — each check is a no-op if the column already exists."""
-    conn = _connect()
+    conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
 
     def column_exists(table, column):
@@ -618,19 +646,24 @@ def add_material():
         flash(g.t("flash_name_unit_required"), "error")
         return redirect(url_for("materials"))
 
-    # The person tells us what they bought and what they paid in total —
-    # e.g. "10kg of flour for $12" — and we work out cost-per-unit
-    # ourselves, rather than asking them to do that division.
+    # The price entered is the TOTAL cost of the starting-stock quantity —
+    # e.g. "2 kg, $4 total" — and we divide it here to store cost-per-unit
+    # ($2/kg), which is what recipe costing on the Products tab multiplies
+    # against. If a price is given but there's no quantity to divide it by,
+    # we can't know a per-unit cost yet, so we save $0 and say why, rather
+    # than guessing.
     total_cost = None
     if total_cost_usd_raw:
         total_cost = float(total_cost_usd_raw)
     elif total_cost_riel_raw:
         total_cost = riel_to_usd(float(total_cost_riel_raw))
 
-    if total_cost is not None and stock_qty > 0:
-        cost_per_unit = total_cost / stock_qty
-    else:
-        cost_per_unit = 0.0
+    cost_per_unit = 0.0
+    if total_cost is not None:
+        if stock_qty > 0:
+            cost_per_unit = total_cost / stock_qty
+        else:
+            flash(g.t("flash_price_needs_qty"), "error")
 
     try:
         db.execute(
@@ -660,8 +693,8 @@ def edit_material(material_id):
     db = get_db()
     name = request.form.get("name", "").strip()
     unit = request.form.get("unit", "").strip()
-    cost_usd_raw = request.form.get("cost_per_unit_usd", "").strip()
-    cost_riel_raw = request.form.get("cost_per_unit_riel", "").strip()
+    total_cost_usd_raw = request.form.get("total_cost_usd", "").strip()
+    total_cost_riel_raw = request.form.get("total_cost_riel", "").strip()
     supplier_name = request.form.get("supplier_name", "").strip()
     supplier_contact = request.form.get("supplier_contact", "").strip()
     notes = request.form.get("notes", "").strip()
@@ -670,13 +703,27 @@ def edit_material(material_id):
         flash(g.t("flash_name_unit_required"), "error")
         return redirect(url_for("materials"))
 
-    if cost_usd_raw:
-        cost_per_unit = float(cost_usd_raw)
-    elif cost_riel_raw:
-        cost_per_unit = riel_to_usd(float(cost_riel_raw))
-    else:
-        existing = db.execute("SELECT cost_per_unit FROM materials WHERE id = ?", (material_id,)).fetchone()
+    existing = db.execute("SELECT stock_qty, cost_per_unit FROM materials WHERE id = ?", (material_id,)).fetchone()
+
+    total_cost = None
+    if total_cost_usd_raw:
+        total_cost = float(total_cost_usd_raw)
+    elif total_cost_riel_raw:
+        total_cost = riel_to_usd(float(total_cost_riel_raw))
+
+    if total_cost is None:
+        # No price entered — leave the existing cost-per-unit untouched.
         cost_per_unit = existing["cost_per_unit"] if existing else 0.0
+    else:
+        # Same "total price of the overall quantity" model as Add material:
+        # the number entered here is the total value of what's currently in
+        # stock, divided by the current stock quantity to get cost-per-unit.
+        current_stock_qty = existing["stock_qty"] if existing else 0.0
+        if current_stock_qty > 0:
+            cost_per_unit = total_cost / current_stock_qty
+        else:
+            flash(g.t("flash_price_needs_qty"), "error")
+            cost_per_unit = existing["cost_per_unit"] if existing else 0.0
 
     try:
         db.execute(

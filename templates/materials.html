@@ -195,6 +195,7 @@
     </form>
     <p class="field-hint">{{ t('cost_hint') }}</p>
     <p class="field-hint currency-preview" id="cost-preview"></p>
+    <p class="field-hint currency-preview" id="cost-per-unit-preview"></p>
   </div>
 </div>
 
@@ -212,9 +213,15 @@
     const rate = {{ khr_per_usd }};
     const usdInput = document.getElementById('total_cost_usd');
     const rielInput = document.getElementById('total_cost_riel');
+    const stockQtyInput = document.getElementById('stock_qty');
     const preview = document.getElementById('cost-preview');
+    const perUnitPreview = document.getElementById('cost-per-unit-preview');
     let lastEdited = null;
 
+    // The price entered is the TOTAL cost of the starting-stock quantity.
+    // This preview shows the resulting cost-per-unit live — using the same
+    // math the server applies — so it's obvious *before* saving whether the
+    // stock quantity was filled in.
     function updatePreview() {
       if (lastEdited === 'usd' && usdInput.value) {
         preview.textContent = '≈ ៛' + Math.round((parseFloat(usdInput.value) || 0) * rate).toLocaleString();
@@ -223,9 +230,25 @@
       } else {
         preview.textContent = '';
       }
+
+      let totalCostUsd = null;
+      if (lastEdited === 'usd' && usdInput.value) totalCostUsd = parseFloat(usdInput.value) || 0;
+      else if (lastEdited === 'riel' && rielInput.value) totalCostUsd = (parseFloat(rielInput.value) || 0) / rate;
+
+      if (totalCostUsd !== null) {
+        const qty = parseFloat(stockQtyInput.value) || 0;
+        if (qty > 0) {
+          perUnitPreview.textContent = '{{ t("cost_per_unit_calc") }}: $' + (totalCostUsd / qty).toFixed(2);
+        } else {
+          perUnitPreview.textContent = '⚠ {{ t("flash_price_needs_qty") }}';
+        }
+      } else {
+        perUnitPreview.textContent = '';
+      }
     }
     usdInput.addEventListener('input', function () { lastEdited = 'usd'; updatePreview(); });
     rielInput.addEventListener('input', function () { lastEdited = 'riel'; updatePreview(); });
+    stockQtyInput.addEventListener('input', updatePreview);
     document.querySelector('.form-grid').addEventListener('submit', function () {
       if (lastEdited === 'usd') { rielInput.value = ''; }
       if (lastEdited === 'riel') { usdInput.value = ''; }
@@ -347,12 +370,12 @@
           </select>
         </div>
         <div class="field">
-          <label>{{ t('cost_usd_label') }}</label>
-          <input type="number" step="any" name="cost_per_unit_usd" placeholder="{{ '%.2f'|format(m.cost_per_unit) }}">
+          <label>{{ t('material_price_usd_label') }}</label>
+          <input type="number" step="any" name="total_cost_usd" id="edit-total-usd-{{ m.id }}" placeholder="{{ '%.2f'|format(m.cost_per_unit * m.stock_qty) }}">
         </div>
         <div class="field">
-          <label>{{ t('cost_riel_label') }}</label>
-          <input type="number" step="any" name="cost_per_unit_riel"placeholder="{{ '{:,.0f}'.format(m.cost_per_unit * khr_per_usd) }}">
+          <label>{{ t('material_price_riel_label') }}</label>
+          <input type="number" step="any" name="total_cost_riel" id="edit-total-riel-{{ m.id }}" placeholder="{{ '{:,.0f}'.format(m.cost_per_unit * m.stock_qty * khr_per_usd) }}">
         </div>
         <div class="field">
           <label>{{ t('supplier_name_label') }}</label>
@@ -371,7 +394,33 @@
           <button type="submit">{{ t('save_edit_btn') }}</button>
         </div>
       </form>
-      <p class="field-hint">{{ t('cost_hint') }}</p>
+      <p class="field-hint">{{ t('edit_total_price_hint', qty='%.2f'|format(m.stock_qty), unit=m.unit) }}</p>
+      <p class="field-hint currency-preview" id="edit-cost-per-unit-preview-{{ m.id }}"></p>
+      <script>
+        (function () {
+          const usdInput = document.getElementById('edit-total-usd-{{ m.id }}');
+          const rielInput = document.getElementById('edit-total-riel-{{ m.id }}');
+          const preview = document.getElementById('edit-cost-per-unit-preview-{{ m.id }}');
+          const rate = {{ khr_per_usd }};
+          const currentQty = {{ m.stock_qty }};
+
+          function update() {
+            let totalUsd = null;
+            if (usdInput.value) totalUsd = parseFloat(usdInput.value) || 0;
+            else if (rielInput.value) totalUsd = (parseFloat(rielInput.value) || 0) / rate;
+
+            if (totalUsd === null) {
+              preview.textContent = '';
+            } else if (currentQty > 0) {
+              preview.textContent = '{{ t("cost_per_unit_calc") }}: $' + (totalUsd / currentQty).toFixed(2);
+            } else {
+              preview.textContent = '⚠ {{ t("flash_price_needs_qty") }}';
+            }
+          }
+          usdInput.addEventListener('input', function () { rielInput.value = ''; update(); });
+          rielInput.addEventListener('input', function () { usdInput.value = ''; update(); });
+        })();
+      </script>
     </div>
 
     <div id="history-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">
