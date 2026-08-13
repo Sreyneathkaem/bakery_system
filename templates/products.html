@@ -40,8 +40,8 @@
         </select>
       </div>
       <div class="field">
-        <label for="batch_yield">{{ t('batch_yield_label') }}</label>
-        <input type="number" step="any" min="1" id="batch_yield" name="batch_yield" placeholder="{{ t('batch_yield_ph') }}">
+        <label for="piece_weight_g">{{ t('piece_weight_label') }}</label>
+        <input type="number" step="any" min="0" id="piece_weight_g" name="piece_weight_g" placeholder="{{ t('piece_weight_ph') }}">
       </div>
       <div class="field field-submit">
         <label>&nbsp;</label>
@@ -49,7 +49,7 @@
       </div>
     </form>
     <p class="field-hint">{{ t('cost_hint') }}</p>
-    <p class="field-hint">{{ t('batch_yield_hint') }}</p>
+    <p class="field-hint">{{ t('piece_weight_hint') }}</p>
     <p class="field-hint currency-preview" id="price-preview"></p>
   </div>
 </div>
@@ -105,8 +105,8 @@
     chevron.classList.toggle('open', !isOpen);
   }
 
-  function toggleBatchYieldEdit(productId) {
-    const form = document.getElementById('batch-yield-form-' + productId);
+  function togglePieceWeightEdit(productId) {
+    const form = document.getElementById('piece-weight-form-' + productId);
     form.style.display = form.style.display === 'none' ? 'inline-block' : 'none';
   }
 
@@ -208,10 +208,6 @@
           <span class="stat-label">{{ t('selling_price') }}:</span>${{ '%.2f'|format(item.product.price) }}
           <span class="sep">·</span>
           <span class="stat-label">{{ t('cost_per_unit_calc') }}:</span>${{ item.cost_per_unit|money }}
-          {% if item.recipe %}
-          <span class="sep">·</span>
-          <span class="stat-label">{{ t('can_make_now') }}:</span><span class="{{ 'margin-neg' if item.max_producible == 0 else '' }}">{{ item.max_producible }}</span>
-          {% endif %}
         </div>
         <form method="POST" action="{{ url_for('delete_product', product_id=item.product.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_product', name=item.product.name) }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
@@ -219,14 +215,24 @@
       </div>
 
       <div class="material-stat-line mono" style="margin-top:4px;" onclick="event.stopPropagation();">
-        <span class="stat-label">{{ t('batch_size_display_label') }}:</span>
-        <span id="batch-yield-display-{{ item.product.id }}">{{ item.product.batch_yield|round(2) }}</span>
-        <button type="button" class="secondary btn-sm" onclick="toggleBatchYieldEdit({{ item.product.id }})">{{ t('edit_batch_yield_btn') }}</button>
-        <form method="POST" action="{{ url_for('update_batch_yield', product_id=item.product.id) }}" class="inline-form" id="batch-yield-form-{{ item.product.id }}" style="display:none;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="number" step="any" min="1" name="batch_yield" value="{{ item.product.batch_yield|round(2) }}" style="width:80px; display:inline-block;">
-          <button type="submit" class="secondary btn-sm">{{ t('save_batch_yield_btn') }}</button>
+        <span class="stat-label">{{ t('piece_weight_label') }}:</span>
+        <span id="piece-weight-display-{{ item.product.id }}">{{ item.product.piece_weight_g|round(1) if item.product.piece_weight_g else t('piece_weight_unset') }}</span>{% if item.product.piece_weight_g %}g{% endif %}
+        <button type="button" class="secondary btn-sm" onclick="togglePieceWeightEdit({{ item.product.id }})">{{ t('edit_piece_weight_btn') }}</button>
+        <form method="POST" action="{{ url_for('update_piece_weight', product_id=item.product.id) }}" class="inline-form" id="piece-weight-form-{{ item.product.id }}" style="display:none;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="number" step="any" min="0" name="piece_weight_g" value="{{ item.product.piece_weight_g|round(1) }}" style="width:80px; display:inline-block;" placeholder="{{ t('piece_weight_ph') }}">
+          <button type="submit" class="secondary btn-sm">{{ t('save_piece_weight_btn') }}</button>
         </form>
       </div>
+
+      <div class="material-stat-line mono" style="margin-top:4px;">
+        <span class="stat-label">{{ t('batch_makes_label') }}:</span>{{ item.product.batch_yield|round(0)|int }} {{ t('pieces_word') }}
+      </div>
+      {% if item.unweighed_ingredients %}
+      <div class="material-card-sub">{{ t('unweighed_hint') }}: {{ item.unweighed_ingredients|join(', ') }}</div>
+      {% endif %}
+      {% if not item.product.piece_weight_g %}
+      <div class="material-card-sub">{{ t('no_piece_weight_yet') }}</div>
+      {% endif %}
 
       {% if item.recipe and item.limiting_material %}
       <div class="material-card-sub">{{ t('limited_by_label') }}: {{ item.limiting_material }}</div>

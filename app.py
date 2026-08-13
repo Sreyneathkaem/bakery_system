@@ -1,4 +1,5 @@
 import os
+import math
 import json
 import base64
 import urllib.request
@@ -246,6 +247,8 @@ def migrate_db():
         cur.execute("ALTER TABLE products ADD COLUMN available_qty DOUBLE PRECISION NOT NULL DEFAULT 0")
     if not column_exists("products", "batch_yield"):
         cur.execute("ALTER TABLE products ADD COLUMN batch_yield DOUBLE PRECISION NOT NULL DEFAULT 1")
+    if not column_exists("products", "piece_weight_g"):
+        cur.execute("ALTER TABLE products ADD COLUMN piece_weight_g DOUBLE PRECISION NOT NULL DEFAULT 0")
     if not column_exists("materials", "supplier_name"):
         cur.execute("ALTER TABLE materials ADD COLUMN supplier_name TEXT")
     if not column_exists("materials", "supplier_contact"):
@@ -322,6 +325,76 @@ def convert_amount_to_base_unit(amount, entered_unit, base_unit):
         return amount
     factor = UNIT_CONVERSION_FACTORS.get((entered_unit, base_unit))
     return amount * factor if factor is not None else amount
+
+
+def grams_per_material_unit(unit):
+    """How many grams one unit of a material's stock unit weighs, so a
+    batch's mixed ingredients (flour in kg, milk in l, ...) can be folded
+    into one total batch weight. Weight units convert exactly. Volume units
+    use the standard baking approximation that 1 liter of a liquid
+    ingredient weighs about 1000g (true for water/milk and close enough for
+    most others) so liquids still count toward the mix. Count-based units
+    (pcs, dozen) and anything else with no defined weight (pack, box) can't
+    be converted and are excluded from the total — she'll see them listed
+    separately so nothing is silently dropped."""
+    if unit in _GRAMS_PER_WEIGHT_UNIT:
+        return _GRAMS_PER_WEIGHT_UNIT[unit]
+    if unit in _LITERS_PER_VOLUME_UNIT:
+        return _LITERS_PER_VOLUME_UNIT[unit] * 1000.0
+    return None
+
+
+def compute_batch_weight_g(db, product_id):
+    """Total weight of everything mixed into this product's batch, in
+    grams — the sum of every recipe ingredient's batch_qty (already stored
+    in the material's own stock unit), converted to grams. Ingredients
+    whose unit has no defined weight (pcs, pack, box) are skipped and their
+    names returned separately so the UI can flag them instead of silently
+    mis-totaling the batch."""
+    rows = db.execute(
+        "SELECT product_ingredients.batch_qty, materials.unit, materials.name "
+        "FROM product_ingredients JOIN materials ON materials.id = product_ingredients.material_id "
+        "WHERE product_id = ?",
+        (product_id,),
+    ).fetchall()
+    total_g = 0.0
+    unweighed = []
+    for r in rows:
+        grams_per_unit = grams_per_material_unit(r["unit"])
+        if grams_per_unit is None:
+            unweighed.append(r["name"])
+        else:
+            total_g += r["batch_qty"] * grams_per_unit
+    return total_g, unweighed
+
+
+def recompute_batch_yield(db, product_id):
+    """The heart of the auto batch-size feature: she mixes a pile of
+    ingredients and tells the system how much ONE piece should weigh
+    (piece_weight_g); everything else — how many pieces this batch makes,
+    and therefore cost/profit per piece — is derived automatically instead
+    of her pre-calculating it herself. Runs after every recipe change
+    (ingredient added/edited/removed) and whenever piece_weight_g itself
+    changes, so the numbers shown are always current."""
+    product = db.execute(
+        "SELECT piece_weight_g FROM products WHERE id = ?", (product_id,)
+    ).fetchone()
+    piece_weight_g = product["piece_weight_g"] if product else 0
+    total_weight_g, unweighed = compute_batch_weight_g(db, product_id)
+
+    if piece_weight_g > 0 and total_weight_g > 0:
+        # Floored — she sells whole pieces, not fractions of one.
+        batch_yield = math.floor(total_weight_g / piece_weight_g + 1e-9)
+        if batch_yield < 1:
+            batch_yield = 1
+    else:
+        # Not enough info yet (no piece weight set, or no ingredients
+        # weighed in) — fall back to 1 so cost math never divides by zero.
+        batch_yield = 1.0
+
+    db.execute("UPDATE products SET batch_yield = ? WHERE id = ?", (batch_yield, product_id))
+    recompute_product_recipe_costs(db, product_id, batch_yield)
+    return batch_yield, total_weight_g, unweighed
 
 
 QR_MIMETYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
@@ -936,6 +1009,7 @@ def products():
     products_with_recipes = []
     for p in rows:
         recipe = product_recipes[p["id"]]
+        total_weight_g, unweighed = compute_batch_weight_g(db, p["id"])
         cost_per_unit = sum(
             r["quantity_per_unit"] * materials_by_id[r["material_id"]]["cost_per_unit"]
             for r in recipe if r["material_id"] in materials_by_id
@@ -967,6 +1041,8 @@ def products():
             "max_producible": max_producible,
             "limiting_material": limiting_material,
             "shared_materials": shared_materials,
+            "total_weight_g": total_weight_g,
+            "unweighed_ingredients": unweighed,
         })
 
     open_product_id = request.args.get("open", type=int)
@@ -1001,16 +1077,19 @@ def add_product():
     else:
         price = 0.0
 
-    # "This batch makes: N pieces" — set once per product. Every ingredient
-    # amount entered on this product's recipe gets divided by this number to
-    # get cost-per-piece, so it must be a real, positive count; a blank or
-    # invalid entry falls back to 1 rather than silently breaking recipe math.
+    # Standard weight of one piece (grams) — optional at creation time,
+    # since she may add it once she's mixed the batch and knows the recipe.
+    # "This batch makes: N pieces" is no longer typed in by hand; it's
+    # derived automatically once both a piece weight and a recipe exist
+    # (see recompute_batch_yield). Until then batch_yield defaults to 1 so
+    # cost math never divides by zero.
     try:
-        batch_yield = float(request.form.get("batch_yield") or 0)
+        piece_weight_g = float(request.form.get("piece_weight_g") or 0)
     except ValueError:
-        batch_yield = 0
-    if batch_yield <= 0:
-        batch_yield = 1.0
+        piece_weight_g = 0
+    if piece_weight_g < 0:
+        piece_weight_g = 0
+    batch_yield = 1.0
 
     # A product that was "deleted" while it had order history is actually
     # archived, not removed (see delete_product) — its name is still taken.
@@ -1020,8 +1099,8 @@ def add_product():
     existing = db.execute("SELECT id, active FROM products WHERE name = ?", (name,)).fetchone()
     if existing and not existing["active"]:
         db.execute(
-            "UPDATE products SET active = 1, price = ?, category = ?, batch_yield = ? WHERE id = ?",
-            (price, category, batch_yield, existing["id"]),
+            "UPDATE products SET active = 1, price = ?, category = ?, batch_yield = ?, piece_weight_g = ? WHERE id = ?",
+            (price, category, batch_yield, piece_weight_g, existing["id"]),
         )
         db.commit()
         flash(g.t("flash_product_reactivated", name=name), "success")
@@ -1029,8 +1108,8 @@ def add_product():
 
     try:
         db.execute(
-            "INSERT INTO products (name, price, category, batch_yield) VALUES (?, ?, ?, ?)",
-            (name, price, category, batch_yield),
+            "INSERT INTO products (name, price, category, batch_yield, piece_weight_g) VALUES (?, ?, ?, ?, ?)",
+            (name, price, category, batch_yield, piece_weight_g),
         )
         db.commit()
         flash(g.t("flash_product_added", name=name), "success")
@@ -1055,38 +1134,41 @@ def recompute_product_recipe_costs(db, product_id, new_batch_yield):
         )
 
 
-@app.route("/products/<int:product_id>/batch-yield", methods=["POST"])
+@app.route("/products/<int:product_id>/piece-weight", methods=["POST"])
 @login_required
-def update_batch_yield(product_id):
+def update_piece_weight(product_id):
+    """Sets how much ONE piece should weigh. Batch size (how many pieces
+    the mixed batch makes) and cost/profit per piece are then recomputed
+    automatically from the total weight of her mixed ingredients — she
+    never types a piece count in by hand."""
     db = get_db()
     try:
-        batch_yield = float(request.form.get("batch_yield") or 0)
+        piece_weight_g = float(request.form.get("piece_weight_g") or 0)
     except ValueError:
-        batch_yield = 0
+        piece_weight_g = 0
 
-    if batch_yield <= 0:
-        flash(g.t("flash_batch_yield_invalid"), "error")
+    if piece_weight_g <= 0:
+        flash(g.t("flash_piece_weight_invalid"), "error")
         return redirect(url_for("products", open=product_id))
 
-    db.execute("UPDATE products SET batch_yield = ? WHERE id = ?", (batch_yield, product_id))
-    recompute_product_recipe_costs(db, product_id, batch_yield)
+    db.execute("UPDATE products SET piece_weight_g = ? WHERE id = ?", (piece_weight_g, product_id))
+    recompute_batch_yield(db, product_id)
     db.commit()
-    flash(g.t("flash_batch_yield_updated"), "success")
+    flash(g.t("flash_piece_weight_updated"), "success")
     return redirect(url_for("products", open=product_id))
 
 
 @app.route("/products/<int:product_id>/recipe/add", methods=["POST"])
 @login_required
 def add_recipe_ingredient(product_id):
-    """Records how much of one material the WHOLE BATCH uses — e.g. "2kg
-    flour" for a batch that makes 30 pieces — rather than asking her to
-    pre-calculate a per-piece amount herself. The amount can be typed in any
-    unit compatible with the material's own stock unit (e.g. grams for a
-    material tracked in kg) and gets converted back before storing. The
-    per-piece amount (quantity_per_unit, used everywhere else in the app for
-    costing and stock deduction) is derived here by dividing the batch total
-    by the product's batch_yield, and gets re-derived automatically whenever
-    batch_yield changes (see recompute_product_recipe_costs)."""
+    """Records how much of one material goes into the WHOLE mixed batch —
+    e.g. "2kg flour" — rather than asking her to pre-calculate a per-piece
+    amount herself. The amount can be typed in any unit compatible with the
+    material's own stock unit (e.g. grams for a material tracked in kg) and
+    gets converted back before storing. Batch size (pieces this batch
+    makes) and every ingredient's per-piece amount are then re-derived from
+    scratch by recompute_batch_yield, using the batch's total mixed weight
+    and the product's piece weight — not typed in by hand."""
     db = get_db()
     material_id = request.form.get("material_id")
     entered_unit = request.form.get("entered_unit", "").strip()
@@ -1099,29 +1181,29 @@ def add_recipe_ingredient(product_id):
         flash(g.t("flash_recipe_invalid"), "error")
         return redirect(url_for("products"))
 
-    product = db.execute("SELECT batch_yield FROM products WHERE id = ?", (product_id,)).fetchone()
-    batch_yield = product["batch_yield"] if product and product["batch_yield"] > 0 else 1.0
-
     material = db.execute("SELECT unit FROM materials WHERE id = ?", (material_id,)).fetchone()
     base_unit = material["unit"] if material else entered_unit
     batch_qty = convert_amount_to_base_unit(entered_amount, entered_unit, base_unit)
-    quantity_per_unit = batch_qty / batch_yield
 
     existing = db.execute(
         "SELECT id FROM product_ingredients WHERE product_id = ? AND material_id = ?",
         (product_id, material_id),
     ).fetchone()
     if existing:
+        # quantity_per_unit and yield_count are placeholders here — the
+        # call below recomputes them (and every other ingredient's) from
+        # the new total batch weight.
         db.execute(
-            "UPDATE product_ingredients SET batch_qty = ?, yield_count = ?, quantity_per_unit = ? WHERE id = ?",
-            (batch_qty, batch_yield, quantity_per_unit, existing["id"]),
+            "UPDATE product_ingredients SET batch_qty = ?, yield_count = 1, quantity_per_unit = 0 WHERE id = ?",
+            (batch_qty, existing["id"]),
         )
     else:
         db.execute(
             "INSERT INTO product_ingredients (product_id, material_id, batch_qty, yield_count, quantity_per_unit) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (product_id, material_id, batch_qty, batch_yield, quantity_per_unit),
+            "VALUES (?, ?, ?, 1, 0)",
+            (product_id, material_id, batch_qty),
         )
+    recompute_batch_yield(db, product_id)
     db.commit()
     flash(g.t("flash_recipe_updated"), "success")
     return redirect(url_for("products", open=product_id))
@@ -1135,6 +1217,11 @@ def remove_recipe_ingredient(ingredient_id):
         "SELECT product_id FROM product_ingredients WHERE id = ?", (ingredient_id,)
     ).fetchone()
     db.execute("DELETE FROM product_ingredients WHERE id = ?", (ingredient_id,))
+    if row:
+        # Removing an ingredient changes the batch's total mixed weight, so
+        # batch size and every remaining ingredient's per-piece cost need
+        # to be re-derived too.
+        recompute_batch_yield(db, row["product_id"])
     db.commit()
     flash(g.t("flash_ingredient_removed"), "success")
     return redirect(url_for("products", open=row["product_id"] if row else None))

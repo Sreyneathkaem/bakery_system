@@ -393,7 +393,6 @@
           <button type="submit">{{ t('save_edit_btn') }}</button>
         </div>
       </form>
-      <p class="field-hint">{{ t('edit_total_price_hint', qty='%.2f'|format(m.stock_qty), unit=m.unit) }}</p>
       {% if m.stock_qty <= 0 %}
       <p class="field-hint currency-preview" id="edit-cost-per-unit-preview-{{ m.id }}"></p>
       <script>

@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS products (
     price DOUBLE PRECISION NOT NULL DEFAULT 0,
     category TEXT NOT NULL DEFAULT 'other',  -- 'bread' | 'pastry' | 'cake' | 'drink' | 'other'
     available_qty DOUBLE PRECISION NOT NULL DEFAULT 0,  -- baked, not yet sold
-    batch_yield DOUBLE PRECISION NOT NULL DEFAULT 1,  -- pieces one full bake batch makes
+    batch_yield DOUBLE PRECISION NOT NULL DEFAULT 1,  -- pieces one full bake batch makes (auto-computed from piece_weight_g)
+    piece_weight_g DOUBLE PRECISION NOT NULL DEFAULT 0,  -- standard weight of one piece, in grams; drives auto batch_yield
     active INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
