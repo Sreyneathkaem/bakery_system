@@ -169,7 +169,10 @@
           <option value="" disabled selected>{{ t('unit_choose') }}</option>
           <option value="kg">{{ t('unit_kg') }}</option>
           <option value="g">{{ t('unit_g') }}</option>
+          <option value="mg">{{ t('unit_mg') }}</option>
           <option value="l">{{ t('unit_l') }}</option>
+          <option value="dl">{{ t('unit_dl') }}</option>
+          <option value="cl">{{ t('unit_cl') }}</option>
           <option value="ml">{{ t('unit_ml') }}</option>
           <option value="pcs">{{ t('unit_pcs') }}</option>
           <option value="dozen">{{ t('unit_dozen') }}</option>
@@ -196,7 +199,6 @@
     </form>
     <p class="field-hint">{{ t('cost_hint') }}</p>
     <p class="field-hint currency-preview" id="cost-preview"></p>
-    <p class="field-hint currency-preview" id="cost-per-unit-preview"></p>
   </div>
 </div>
 
@@ -216,13 +218,13 @@
     const rielInput = document.getElementById('total_cost_riel');
     const stockQtyInput = document.getElementById('stock_qty');
     const preview = document.getElementById('cost-preview');
-    const perUnitPreview = document.getElementById('cost-per-unit-preview');
     let lastEdited = null;
 
     // The price entered is the TOTAL cost of the starting-stock quantity.
-    // This preview shows the resulting cost-per-unit live — using the same
-    // math the server applies — so it's obvious *before* saving whether the
-    // stock quantity was filled in.
+    // This preview shows the equivalent in the other currency, and warns
+    // if there's no stock quantity to divide by yet (the server needs one
+    // to work out cost-per-unit internally, even though that number isn't
+    // shown here).
     function updatePreview() {
       if (lastEdited === 'usd' && usdInput.value) {
         preview.textContent = '≈ ៛' + Math.round((parseFloat(usdInput.value) || 0) * rate).toLocaleString();
@@ -232,19 +234,10 @@
         preview.textContent = '';
       }
 
-      let totalCostUsd = null;
-      if (lastEdited === 'usd' && usdInput.value) totalCostUsd = parseFloat(usdInput.value) || 0;
-      else if (lastEdited === 'riel' && rielInput.value) totalCostUsd = (parseFloat(rielInput.value) || 0) / rate;
-
-      if (totalCostUsd !== null) {
-        const qty = parseFloat(stockQtyInput.value) || 0;
-        if (qty > 0) {
-          perUnitPreview.textContent = '{{ t("cost_per_unit_calc") }}: $' + (totalCostUsd / qty).toFixed(2);
-        } else {
-          perUnitPreview.textContent = '⚠ {{ t("flash_price_needs_qty") }}';
-        }
-      } else {
-        perUnitPreview.textContent = '';
+      const priceEntered = (lastEdited === 'usd' && usdInput.value) || (lastEdited === 'riel' && rielInput.value);
+      const qty = parseFloat(stockQtyInput.value) || 0;
+      if (priceEntered && qty <= 0) {
+        preview.textContent += (preview.textContent ? ' — ' : '') + '⚠ {{ t("flash_price_needs_qty") }}';
       }
     }
     usdInput.addEventListener('input', function () { lastEdited = 'usd'; updatePreview(); });
@@ -304,7 +297,8 @@
         <div class="material-stat-line mono">
           <span class="stat-label">{{ t('stock_qty_col') }}:</span>{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }}
           <span class="sep">·</span>
-          <span class="stat-label">{{ t('cost_unit_col') }}:</span>${{ '%.2f'|format(m.cost_per_unit) }}
+          <span class="stat-label">{{ t('total_price_col') }}:</span>${{ '%.2f'|format(m.cost_per_unit * m.stock_qty) }}
+          <span class="riel-amount">/ ៛{{ '{:,.0f}'.format(m.cost_per_unit * m.stock_qty * khr_per_usd) }}</span>
         </div>
         {% if m.supplier_name %}
         <div class="material-card-sub">{{ t('supplier_col') }}: {{ m.supplier_name }}{% if m.supplier_contact %} ({{ m.supplier_contact}}){% endif %}</div>
@@ -363,7 +357,10 @@
           <select name="unit" required>
             <option value="kg" {{ 'selected' if m.unit == 'kg' }}>{{ t('unit_kg') }}</option>
             <option value="g" {{ 'selected' if m.unit == 'g' }}>{{ t('unit_g') }}</option>
+            <option value="mg" {{ 'selected' if m.unit == 'mg' }}>{{ t('unit_mg') }}</option>
             <option value="l" {{ 'selected' if m.unit == 'l' }}>{{ t('unit_l') }}</option>
+            <option value="dl" {{ 'selected' if m.unit == 'dl' }}>{{ t('unit_dl') }}</option>
+            <option value="cl" {{ 'selected' if m.unit == 'cl' }}>{{ t('unit_cl') }}</option>
             <option value="ml" {{ 'selected' if m.unit == 'ml' }}>{{ t('unit_ml') }}</option>
             <option value="pcs" {{ 'selected' if m.unit == 'pcs' }}>{{ t('unit_pcs') }}</option>
             <option value="dozen" {{ 'selected' if m.unit == 'dozen' }}>{{ t('unit_dozen') }}</option>
@@ -397,32 +394,26 @@
         </div>
       </form>
       <p class="field-hint">{{ t('edit_total_price_hint', qty='%.2f'|format(m.stock_qty), unit=m.unit) }}</p>
+      {% if m.stock_qty <= 0 %}
       <p class="field-hint currency-preview" id="edit-cost-per-unit-preview-{{ m.id }}"></p>
       <script>
         (function () {
           const usdInput = document.getElementById('edit-total-usd-{{ m.id }}');
           const rielInput = document.getElementById('edit-total-riel-{{ m.id }}');
           const preview = document.getElementById('edit-cost-per-unit-preview-{{ m.id }}');
-          const rate = {{ khr_per_usd }};
-          const currentQty = {{ m.stock_qty }};
 
+          // With zero stock on hand there's nothing to divide a total price
+          // by, so warn rather than silently accepting a price that can't
+          // be turned into a per-unit cost.
           function update() {
-            let totalUsd = null;
-            if (usdInput.value) totalUsd = parseFloat(usdInput.value) || 0;
-            else if (rielInput.value) totalUsd = (parseFloat(rielInput.value) || 0) / rate;
-
-            if (totalUsd === null) {
-              preview.textContent = '';
-            } else if (currentQty > 0) {
-              preview.textContent = '{{ t("cost_per_unit_calc") }}: $' + (totalUsd / currentQty).toFixed(2);
-            } else {
-              preview.textContent = '⚠ {{ t("flash_price_needs_qty") }}';
-            }
+            const priceEntered = usdInput.value || rielInput.value;
+            preview.textContent = priceEntered ? '⚠ {{ t("flash_price_needs_qty") }}' : '';
           }
           usdInput.addEventListener('input', function () { rielInput.value = ''; update(); });
           rielInput.addEventListener('input', function () { usdInput.value = ''; update(); });
         })();
       </script>
+      {% endif %}
     </div>
 
     <div id="history-{{ m.id }}" class="material-panel" data-group="{{ m.id }}" style="display:none;">

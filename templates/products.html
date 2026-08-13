@@ -124,13 +124,18 @@
   // how the material's stock is tracked — e.g. "500 g" of flour even though
   // flour's stock is kept in kg, since that's a far more natural number to
   // type than "0.5 kg". Only units that actually convert into the
-  // material's stored unit are offered. Families: weight (kg/g), volume
-  // (l/ml), and count (pcs/dozen) — pack and box don't convert to anything.
+  // material's stored unit are offered. Families: weight (kg/g/mg),
+  // volume (l/dl/cl/ml), and count (pcs/dozen) — pack and box don't
+  // convert to anything. Each list starts with the material's own stored
+  // unit.
   const UNIT_COMPATIBLE = {
-    kg: ['kg', 'g'],
-    g: ['g', 'kg'],
-    l: ['l', 'ml'],
-    ml: ['ml', 'l'],
+    kg: ['kg', 'g', 'mg'],
+    g: ['g', 'kg', 'mg'],
+    mg: ['mg', 'g', 'kg'],
+    l: ['l', 'dl', 'cl', 'ml'],
+    dl: ['dl', 'l', 'cl', 'ml'],
+    cl: ['cl', 'l', 'dl', 'ml'],
+    ml: ['ml', 'l', 'dl', 'cl'],
     pcs: ['pcs', 'dozen'],
     dozen: ['dozen', 'pcs'],
     pack: ['pack'],
@@ -202,7 +207,7 @@
         <div class="material-stat-line mono">
           <span class="stat-label">{{ t('selling_price') }}:</span>${{ '%.2f'|format(item.product.price) }}
           <span class="sep">·</span>
-          <span class="stat-label">{{ t('cost_per_unit_calc') }}:</span>${{ '%.2f'|format(item.cost_per_unit) }}
+          <span class="stat-label">{{ t('cost_per_unit_calc') }}:</span>${{ item.cost_per_unit|money }}
           {% if item.recipe %}
           <span class="sep">·</span>
           <span class="stat-label">{{ t('can_make_now') }}:</span><span class="{{ 'margin-neg' if item.max_producible == 0 else '' }}">{{ item.max_producible }}</span>

@@ -258,6 +258,24 @@ def migrate_db():
     conn.close()
 
 
+@app.template_filter("money")
+def format_money(value):
+    """Formats a USD amount for display. Per-unit ingredient costs are often
+    genuinely tiny (a fraction of a cent per gram of salt, for example) —
+    rounding those to 2 decimals like a normal price can make the number
+    shown on screen not actually match the total it was derived from (e.g.
+    $5.00 / 1000g = $0.005/g, which rounds to "$0.01" — but $0.01 x 1000g
+    reads as $10, not the real $5). Below 1 cent, show enough decimals to
+    keep the true value visible instead."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "0.00"
+    if value != 0 and abs(value) < 0.01:
+        return f"{value:.4f}"
+    return f"{value:.2f}"
+
+
 def usd_to_riel(usd):
     return usd * KHR_PER_USD
 
@@ -272,11 +290,28 @@ def riel_to_usd(riel):
 # "0.0003 kg". Every other calculation (stock deduction, cost per unit)
 # assumes quantity_per_unit is in the material's own stock unit, so
 # whatever's entered gets converted back to that unit before it's stored.
+#
+# Weight and volume conversions are each derived from every unit's size in
+# a common base (grams for weight, liters for volume) — standard metric
+# ratios (1 g = 1000 mg, 1 kg = 1000 g; 1 L = 1000 mL, 1 dL = 100 mL,
+# 1 cL = 10 mL) — so every unit in a family converts correctly to every
+# other one in that family, not just one hand-picked pair.
+_GRAMS_PER_WEIGHT_UNIT = {"mg": 0.001, "g": 1.0, "kg": 1000.0}
+_LITERS_PER_VOLUME_UNIT = {"ml": 0.001, "cl": 0.01, "dl": 0.1, "l": 1.0}
+
+
+def _conversion_table(units_per_base):
+    return {
+        (from_unit, to_unit): units_per_base[from_unit] / units_per_base[to_unit]
+        for from_unit in units_per_base
+        for to_unit in units_per_base
+        if from_unit != to_unit
+    }
+
+
 UNIT_CONVERSION_FACTORS = {
-    ("g", "kg"): 0.001,
-    ("kg", "g"): 1000.0,
-    ("ml", "l"): 0.001,
-    ("l", "ml"): 1000.0,
+    **_conversion_table(_GRAMS_PER_WEIGHT_UNIT),
+    **_conversion_table(_LITERS_PER_VOLUME_UNIT),
     ("pcs", "dozen"): 1.0 / 12.0,
     ("dozen", "pcs"): 12.0,
 }
