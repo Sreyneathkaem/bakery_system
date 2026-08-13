@@ -1,0 +1,86 @@
+diff --git a/app.py b/app.py
+index 50d87f2..f4348ee 100644
+--- a/app.py
++++ b/app.py
+@@ -260,6 +260,22 @@ def usd_to_riel(usd):
+     return usd * KHR_PER_USD
+ 
+ 
++@app.template_filter("money")
++def format_money(value):
++    """Formats a USD amount for display. Per-unit ingredient costs are often
++    genuinely tiny (a gram of salt, a single egg) — rounding those to 2
++    decimals like a normal price would silently show "$0.00" for a real,
++    nonzero cost, making it look like the price never saved. Below 1 cent,
++    show enough decimals to keep the actual value visible instead."""
++    try:
++        value = float(value)
++    except (TypeError, ValueError):
++        return "0.00"
++    if value != 0 and abs(value) < 0.01:
++        return f"{value:.4f}"
++    return f"{value:.2f}"
++
++
+ def riel_to_usd(riel):
+     return riel / KHR_PER_USD if KHR_PER_USD else 0
+ 
+diff --git a/templates/materials.html b/templates/materials.html
+index 390ac63..b4d0b60 100644
+--- a/templates/materials.html
++++ b/templates/materials.html
+@@ -200,6 +200,14 @@
+ </div>
+ 
+ <script>
++  // Mirrors the server-side `money` Jinja filter: per-unit ingredient costs
++  // are often genuinely tiny, so 2 decimals would show "$0.00" for a real,
++  // nonzero price. Show 4 decimals below 1 cent so it stays visible.
++  function formatMoney(value) {
++    if (value !== 0 && Math.abs(value) < 0.01) return value.toFixed(4);
++    return value.toFixed(2);
++  }
++
+   function toggleAddForm() {
+     const card = document.getElementById('add-form-card');
+     const btn = document.getElementById('toggle-add-btn');
+@@ -238,7 +246,7 @@
+       if (totalCostUsd !== null) {
+         const qty = parseFloat(stockQtyInput.value) || 0;
+         if (qty > 0) {
+-          perUnitPreview.textContent = '{{ t("cost_per_unit_calc") }}: $' + (totalCostUsd / qty).toFixed(2);
++          perUnitPreview.textContent = '{{ t("cost_per_unit_calc") }}: $' + formatMoney(totalCostUsd / qty);
+         } else {
+           perUnitPreview.textContent = '⚠ {{ t("flash_price_needs_qty") }}';
+         }
+@@ -303,7 +311,7 @@
+         <div class="material-stat-line mono">
+           <span class="stat-label">{{ t('stock_qty_col') }}:</span>{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }}
+           <span class="sep">·</span>
+-          <span class="stat-label">{{ t('cost_unit_col') }}:</span>${{ '%.2f'|format(m.cost_per_unit) }}
++          <span class="stat-label">{{ t('cost_unit_col') }}:</span>${{ m.cost_per_unit|money }}
+         </div>
+         {% if m.supplier_name %}
+         <div class="material-card-sub">{{ t('supplier_col') }}: {{ m.supplier_name }}{% if m.supplier_contact %} ({{ m.supplier_contact}}){% endif %}</div>
+@@ -412,7 +420,7 @@
+             if (totalUsd === null) {
+               preview.textContent = '';
+             } else if (currentQty > 0) {
+-              preview.textContent = '{{ t("cost_per_unit_calc") }}: $' + (totalUsd / currentQty).toFixed(2);
++              preview.textContent = '{{ t("cost_per_unit_calc") }}: $' + formatMoney(totalUsd / currentQty);
+             } else {
+               preview.textContent = '⚠ {{ t("flash_price_needs_qty") }}';
+             }
+diff --git a/templates/products.html b/templates/products.html
+index 4916779..51c5fa1 100644
+--- a/templates/products.html
++++ b/templates/products.html
+@@ -186,7 +186,7 @@
+         <div class="material-stat-line mono">
+           <span class="stat-label">{{ t('selling_price') }}:</span>${{ '%.2f'|format(item.product.price) }}
+           <span class="sep">·</span>
+-          <span class="stat-label">{{ t('cost_per_unit_calc') }}:</span>${{ '%.2f'|format(item.cost_per_unit) }}
++          <span class="stat-label">{{ t('cost_per_unit_calc') }}:</span>${{ item.cost_per_unit|money }}
+           {% if item.recipe %}
+           <span class="sep">·</span>
+           <span class="stat-label">{{ t('can_make_now') }}:</span><span class="{{ 'margin-neg' if item.max_producible == 0 else '' }}">{{ item.max_producible }}</span>

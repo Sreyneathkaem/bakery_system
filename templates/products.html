@@ -39,12 +39,17 @@
           <option value="other" selected>{{ t('category_other') }}</option>
         </select>
       </div>
+      <div class="field">
+        <label for="batch_yield">{{ t('batch_yield_label') }}</label>
+        <input type="number" step="any" min="1" id="batch_yield" name="batch_yield" placeholder="{{ t('batch_yield_ph') }}">
+      </div>
       <div class="field field-submit">
         <label>&nbsp;</label>
         <button type="submit">{{ t('add_product_btn') }}</button>
       </div>
     </form>
     <p class="field-hint">{{ t('cost_hint') }}</p>
+    <p class="field-hint">{{ t('batch_yield_hint') }}</p>
     <p class="field-hint currency-preview" id="price-preview"></p>
   </div>
 </div>
@@ -100,23 +105,34 @@
     chevron.classList.toggle('open', !isOpen);
   }
 
-  function fillRecipeForm(productId, materialId, quantityPerUnit) {
+  function toggleBatchYieldEdit(productId) {
+    const form = document.getElementById('batch-yield-form-' + productId);
+    form.style.display = form.style.display === 'none' ? 'inline-block' : 'none';
+  }
+
+  // Passes the ingredient's TOTAL amount used for the whole batch (not the
+  // derived per-piece amount) back into the form, so editing an existing
+  // ingredient lets her adjust the same number she originally typed — e.g.
+  // "2kg flour for this batch" — rather than a fraction like 0.0667kg.
+  function fillRecipeForm(productId, materialId, batchTotalQty) {
     document.getElementById('recipe-material-' + productId).value = materialId;
-    document.getElementById('recipe-amount-' + productId).value = quantityPerUnit;
+    document.getElementById('recipe-amount-' + productId).value = batchTotalQty;
     updateRecipeRow(productId);
   }
 
   // Recipe amounts can be typed in a different (but compatible) unit than
-  // how the material's stock is tracked — e.g. "0.3 g" of salt even though
-  // salt's stock is kept in kg, since that's a far more natural number to
-  // type than "0.0003 kg". Only units that actually convert into the
-  // material's stored unit are offered.
+  // how the material's stock is tracked — e.g. "500 g" of flour even though
+  // flour's stock is kept in kg, since that's a far more natural number to
+  // type than "0.5 kg". Only units that actually convert into the
+  // material's stored unit are offered. Families: weight (kg/g), volume
+  // (l/ml), and count (pcs/dozen) — pack and box don't convert to anything.
   const UNIT_COMPATIBLE = {
     kg: ['kg', 'g'],
     g: ['g', 'kg'],
     l: ['l', 'ml'],
     ml: ['ml', 'l'],
-    pcs: ['pcs'],
+    pcs: ['pcs', 'dozen'],
+    dozen: ['dozen', 'pcs'],
     pack: ['pack'],
     box: ['box'],
   };
@@ -197,6 +213,16 @@
         </form>
       </div>
 
+      <div class="material-stat-line mono" style="margin-top:4px;" onclick="event.stopPropagation();">
+        <span class="stat-label">{{ t('batch_size_display_label') }}:</span>
+        <span id="batch-yield-display-{{ item.product.id }}">{{ item.product.batch_yield|round(2) }}</span>
+        <button type="button" class="secondary btn-sm" onclick="toggleBatchYieldEdit({{ item.product.id }})">{{ t('edit_batch_yield_btn') }}</button>
+        <form method="POST" action="{{ url_for('update_batch_yield', product_id=item.product.id) }}" class="inline-form" id="batch-yield-form-{{ item.product.id }}" style="display:none;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="number" step="any" min="1" name="batch_yield" value="{{ item.product.batch_yield|round(2) }}" style="width:80px; display:inline-block;">
+          <button type="submit" class="secondary btn-sm">{{ t('save_batch_yield_btn') }}</button>
+        </form>
+      </div>
+
       {% if item.recipe and item.limiting_material %}
       <div class="material-card-sub">{{ t('limited_by_label') }}: {{ item.limiting_material }}</div>
       {% endif %}
@@ -206,8 +232,9 @@
 
       <div style="margin-bottom:14px;">
         {% for r in item.recipe %}
-        <span class="recipe-chip recipe-chip-editable" onclick="event.stopPropagation(); fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.quantity_per_unit }})">
-          {{ r.material_name }} — {{ r.quantity_per_unit|round(4) }}{{ r.unit }} {{ t('per_unit_suffix') }}
+        <span class="recipe-chip recipe-chip-editable" onclick="event.stopPropagation(); fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.batch_qty }})">
+          {{ r.material_name }} — {{ r.batch_qty|round(4) }}{{ r.unit }} {{ t('per_batch_suffix') }}
+          <span class="chip-sub">({{ r.quantity_per_unit|round(4) }}{{ r.unit }}{{ t('per_unit_suffix') }})</span>
           <form method="POST" action="{{ url_for('remove_recipe_ingredient', ingredient_id=r.id) }}" class="inline-form" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" title="{{ t('delete_btn') }}">&times;</button>
           </form>
@@ -218,6 +245,7 @@
       </div>
 
       <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="recipe-form" id="recipe-form-{{ item.product.id }}" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="field-hint" style="margin:0 0 6px;">{{ t('batch_total_used_label') }}</p>
         <div class="recipe-sentence-row">
           <select name="material_id" id="recipe-material-{{ item.product.id }}" required onchange="updateRecipeRow({{ item.product.id }})">
             <option value="" disabled selected>{{ t('choose') }}</option>
@@ -225,11 +253,11 @@
             <option value="{{ m.id }}" data-unit="{{ m.unit }}">{{ m.name }}</option>
             {% endfor %}
           </select>
-          <input type="number" step="any" name="quantity_per_unit" id="recipe-amount-{{ item.product.id }}" placeholder="0.3" required class="recipe-num-input">
+          <input type="number" step="any" name="batch_total_qty" id="recipe-amount-{{ item.product.id }}" placeholder="2" required class="recipe-num-input">
           <select name="entered_unit" id="recipe-unit-{{ item.product.id }}" class="recipe-unit-select" required>
             <option value="">{{ t('unit_choose') }}</option>
           </select>
-          <span class="recipe-makes-word">{{ t('per_unit_suffix') }}</span>
+          <span class="recipe-makes-word">{{ t('per_batch_suffix') }}</span>
           <button type="submit" class="secondary">{{ t('add_to_recipe_btn') }}</button>
         </div>
         <p class="field-hint">{{ t('recipe_hint') }}</p>

@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS products (
     price DOUBLE PRECISION NOT NULL DEFAULT 0,
     category TEXT NOT NULL DEFAULT 'other',  -- 'bread' | 'pastry' | 'cake' | 'drink' | 'other'
     available_qty DOUBLE PRECISION NOT NULL DEFAULT 0,  -- baked, not yet sold
+    batch_yield DOUBLE PRECISION NOT NULL DEFAULT 1,  -- pieces one full bake batch makes
     active INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -38,9 +39,9 @@ CREATE TABLE IF NOT EXISTS product_ingredients (
     id SERIAL PRIMARY KEY,
     product_id INTEGER NOT NULL REFERENCES products(id),
     material_id INTEGER NOT NULL REFERENCES materials(id),
-    batch_qty DOUBLE PRECISION NOT NULL,
-    yield_count DOUBLE PRECISION NOT NULL,
-    quantity_per_unit DOUBLE PRECISION NOT NULL
+    batch_qty DOUBLE PRECISION NOT NULL,        -- total amount of this material used per full batch
+    yield_count DOUBLE PRECISION NOT NULL,      -- mirrors products.batch_yield at time of save
+    quantity_per_unit DOUBLE PRECISION NOT NULL -- batch_qty / yield_count, cached for cost/stock math
 );
 
 CREATE TABLE IF NOT EXISTS orders (

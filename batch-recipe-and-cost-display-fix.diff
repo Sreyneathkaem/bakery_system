@@ -1,0 +1,383 @@
+diff --git a/app.py b/app.py
+index 50d87f2..888f1ad 100644
+--- a/app.py
++++ b/app.py
+@@ -244,6 +244,8 @@ def migrate_db():
+         cur.execute("ALTER TABLE products ADD COLUMN category TEXT NOT NULL DEFAULT 'other'")
+     if not column_exists("products", "available_qty"):
+         cur.execute("ALTER TABLE products ADD COLUMN available_qty DOUBLE PRECISION NOT NULL DEFAULT 0")
++    if not column_exists("products", "batch_yield_count"):
++        cur.execute("ALTER TABLE products ADD COLUMN batch_yield_count DOUBLE PRECISION NOT NULL DEFAULT 0")
+     if not column_exists("materials", "supplier_name"):
+         cur.execute("ALTER TABLE materials ADD COLUMN supplier_name TEXT")
+     if not column_exists("materials", "supplier_contact"):
+@@ -260,6 +262,22 @@ def usd_to_riel(usd):
+     return usd * KHR_PER_USD
+ 
+ 
++@app.template_filter("money")
++def format_money(value):
++    """Formats a USD amount for display. Per-unit ingredient costs are often
++    genuinely tiny (a gram of salt, a single egg) — rounding those to 2
++    decimals like a normal price would silently show "$0.00" for a real,
++    nonzero cost, making it look like the price never saved. Below 1 cent,
++    show enough decimals to keep the actual value visible instead."""
++    try:
++        value = float(value)
++    except (TypeError, ValueError):
++        return "0.00"
++    if value != 0 and abs(value) < 0.01:
++        return f"{value:.4f}"
++    return f"{value:.2f}"
++
++
+ def riel_to_usd(riel):
+     return riel / KHR_PER_USD if KHR_PER_USD else 0
+ 
+@@ -987,37 +1005,93 @@ def add_product():
+     return redirect(url_for("products"))
+ 
+ 
++@app.route("/products/<int:product_id>/batch-yield", methods=["POST"])
++@login_required
++def set_batch_yield(product_id):
++    """Sets "one batch of this recipe makes N pieces" for a product. This is
++    what turns ingredient amounts (entered as a total used in one batch)
++    into a per-piece cost — the same idea as "1kg of flour makes 20
++    breads", just set once per recipe instead of re-typed per ingredient.
++
++    If the recipe already had a batch size and existing ingredients, changing
++    it recalculates every ingredient's per-piece cost from its stored batch
++    total, so she can correct a batch size later ("actually this made 25,
++    not 30") without re-entering every ingredient. If this is the *first*
++    time a batch size is set on a recipe that already has ingredients (from
++    the old direct-per-piece entry style), we deliberately skip that
++    recalculation — those stored amounts were entered as per-piece values,
++    not batch totals, so dividing them by a batch size would corrupt them.
++    She's told to re-check those ingredients instead."""
++    db = get_db()
++    try:
++        new_yield = float(request.form.get("batch_yield_count") or 0)
++    except ValueError:
++        new_yield = 0
++
++    if new_yield <= 0:
++        flash(g.t("flash_batch_yield_invalid"), "error")
++        return redirect(url_for("products", open=product_id))
++
++    product = db.execute("SELECT batch_yield_count FROM products WHERE id = ?", (product_id,)).fetchone()
++    had_batch_yield_before = bool(product and product["batch_yield_count"] and product["batch_yield_count"] > 0)
++
++    db.execute("UPDATE products SET batch_yield_count = ? WHERE id = ?", (new_yield, product_id))
++
++    if had_batch_yield_before:
++        recipe_rows = db.execute(
++            "SELECT id, batch_qty FROM product_ingredients WHERE product_id = ?", (product_id,)
++        ).fetchall()
++        for row in recipe_rows:
++            db.execute(
++                "UPDATE product_ingredients SET yield_count = ?, quantity_per_unit = ? WHERE id = ?",
++                (new_yield, row["batch_qty"] / new_yield, row["id"]),
++            )
++        flash(g.t("flash_batch_yield_updated"), "success")
++    else:
++        existing_ingredients = db.execute(
++            "SELECT COUNT(*) as c FROM product_ingredients WHERE product_id = ?", (product_id,)
++        ).fetchone()["c"]
++        if existing_ingredients:
++            flash(g.t("flash_batch_yield_set_recheck"), "success")
++        else:
++            flash(g.t("flash_batch_yield_set"), "success")
++
++    db.commit()
++    return redirect(url_for("products", open=product_id))
++
++
+ @app.route("/products/<int:product_id>/recipe/add", methods=["POST"])
+ @login_required
+ def add_recipe_ingredient(product_id):
+-    """Records how much of one material a single unit of this product uses
+-    — e.g. "Salt: 0.3g per unit" — entered directly rather than as a batch
+-    that then gets divided by a yield count. The amount can be typed in any
+-    unit compatible with the material's own stock unit (e.g. grams for a
+-    material tracked in kg) and gets converted back before storing, since
+-    every other calculation assumes quantity_per_unit is in that stock
+-    unit. Stored in the same batch_qty / yield_count / quantity_per_unit
+-    columns for compatibility (batch_qty is just set equal to the per-unit
+-    amount, with yield_count fixed at 1), so no schema change is needed and
+-    older recipes entered via batch math still display and edit correctly."""
++    """Records one ingredient's total amount used in a single batch of this
++    recipe — e.g. "2kg of flour, this batch makes 30 pieces" — and divides
++    it by the product's batch_yield_count to store a per-piece cost, since
++    every other calculation (recipe costing, stock deduction) assumes
++    quantity_per_unit is a single-piece amount. The amount can be typed in
++    any unit compatible with the material's own stock unit (e.g. grams for
++    a material tracked in kg) and gets converted back before dividing."""
+     db = get_db()
+     material_id = request.form.get("material_id")
+     entered_unit = request.form.get("entered_unit", "").strip()
+     try:
+-        entered_amount = float(request.form.get("quantity_per_unit") or 0)
++        entered_amount = float(request.form.get("batch_amount") or 0)
+     except ValueError:
+         entered_amount = 0
+ 
+     if not material_id or entered_amount <= 0:
+         flash(g.t("flash_recipe_invalid"), "error")
+-        return redirect(url_for("products"))
++        return redirect(url_for("products", open=product_id))
++
++    product = db.execute("SELECT batch_yield_count FROM products WHERE id = ?", (product_id,)).fetchone()
++    batch_yield = product["batch_yield_count"] if product else 0
++    if not batch_yield or batch_yield <= 0:
++        flash(g.t("flash_batch_yield_required"), "error")
++        return redirect(url_for("products", open=product_id))
+ 
+     material = db.execute("SELECT unit FROM materials WHERE id = ?", (material_id,)).fetchone()
+     base_unit = material["unit"] if material else entered_unit
+-    quantity_per_unit = convert_amount_to_base_unit(entered_amount, entered_unit, base_unit)
+-
+-    batch_qty = quantity_per_unit
+-    yield_count = 1
++    batch_qty = convert_amount_to_base_unit(entered_amount, entered_unit, base_unit)
++    quantity_per_unit = batch_qty / batch_yield
+ 
+     existing = db.execute(
+         "SELECT id FROM product_ingredients WHERE product_id = ? AND material_id = ?",
+@@ -1026,13 +1100,13 @@ def add_recipe_ingredient(product_id):
+     if existing:
+         db.execute(
+             "UPDATE product_ingredients SET batch_qty = ?, yield_count = ?, quantity_per_unit = ? WHERE id = ?",
+-            (batch_qty, yield_count, quantity_per_unit, existing["id"]),
++            (batch_qty, batch_yield, quantity_per_unit, existing["id"]),
+         )
+     else:
+         db.execute(
+             "INSERT INTO product_ingredients (product_id, material_id, batch_qty, yield_count, quantity_per_unit) "
+             "VALUES (?, ?, ?, ?, ?)",
+-            (product_id, material_id, batch_qty, yield_count, quantity_per_unit),
++            (product_id, material_id, batch_qty, batch_yield, quantity_per_unit),
+         )
+     db.commit()
+     flash(g.t("flash_recipe_updated"), "success")
+diff --git a/schema.sql b/schema.sql
+index 2fff9bc..30f8e86 100644
+--- a/schema.sql
++++ b/schema.sql
+@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS products (
+     price DOUBLE PRECISION NOT NULL DEFAULT 0,
+     category TEXT NOT NULL DEFAULT 'other',  -- 'bread' | 'pastry' | 'cake' | 'drink' | 'other'
+     available_qty DOUBLE PRECISION NOT NULL DEFAULT 0,  -- baked, not yet sold
++    batch_yield_count DOUBLE PRECISION NOT NULL DEFAULT 0,  -- "one batch of this recipe makes N pieces" (0 = not set yet)
+     active INTEGER NOT NULL DEFAULT 1,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+ );
+diff --git a/static/css/main.css b/static/css/main.css
+index 19b57f7..54058c2 100644
+--- a/static/css/main.css
++++ b/static/css/main.css
+@@ -960,6 +960,11 @@ button.danger-btn:hover { background: var(--danger-bg); }
+   color: #8A7A63;
+   font-size: 0.76rem;
+ }
++.recipe-chip-sub {
++  color: #8A7A63;
++  font-size: 0.76rem;
++  margin-left: 2px;
++}
+ .cost-margin-line {
+   font-size: 0.82rem;
+   color: #6B5C4A;
+diff --git a/templates/materials.html b/templates/materials.html
+index 390ac63..b4d0b60 100644
+--- a/templates/materials.html
++++ b/templates/materials.html
+@@ -200,6 +200,14 @@
+ </div>
+ 
+ <script>
++  // Mirrors the server-side `money` Jinja filter: per-unit ingredient costs
++  // are often genuinely tiny, so 2 decimals would show "$0.00" for a real,
++  // nonzero price. Show 4 decimals below 1 cent so it stays visible.
++  function formatMoney(value) {
++    if (value !== 0 && Math.abs(value) < 0.01) return value.toFixed(4);
++    return value.toFixed(2);
++  }
++
+   function toggleAddForm() {
+     const card = document.getElementById('add-form-card');
+     const btn = document.getElementById('toggle-add-btn');
+@@ -238,7 +246,7 @@
+       if (totalCostUsd !== null) {
+         const qty = parseFloat(stockQtyInput.value) || 0;
+         if (qty > 0) {
+-          perUnitPreview.textContent = '{{ t("cost_per_unit_calc") }}: $' + (totalCostUsd / qty).toFixed(2);
++          perUnitPreview.textContent = '{{ t("cost_per_unit_calc") }}: $' + formatMoney(totalCostUsd / qty);
+         } else {
+           perUnitPreview.textContent = '⚠ {{ t("flash_price_needs_qty") }}';
+         }
+@@ -303,7 +311,7 @@
+         <div class="material-stat-line mono">
+           <span class="stat-label">{{ t('stock_qty_col') }}:</span>{{ '%.2f'|format(m.stock_qty) }} {{ m.unit }}
+           <span class="sep">·</span>
+-          <span class="stat-label">{{ t('cost_unit_col') }}:</span>${{ '%.2f'|format(m.cost_per_unit) }}
++          <span class="stat-label">{{ t('cost_unit_col') }}:</span>${{ m.cost_per_unit|money }}
+         </div>
+         {% if m.supplier_name %}
+         <div class="material-card-sub">{{ t('supplier_col') }}: {{ m.supplier_name }}{% if m.supplier_contact %} ({{ m.supplier_contact}}){% endif %}</div>
+@@ -412,7 +420,7 @@
+             if (totalUsd === null) {
+               preview.textContent = '';
+             } else if (currentQty > 0) {
+-              preview.textContent = '{{ t("cost_per_unit_calc") }}: $' + (totalUsd / currentQty).toFixed(2);
++              preview.textContent = '{{ t("cost_per_unit_calc") }}: $' + formatMoney(totalUsd / currentQty);
+             } else {
+               preview.textContent = '⚠ {{ t("flash_price_needs_qty") }}';
+             }
+diff --git a/templates/products.html b/templates/products.html
+index 4916779..7170233 100644
+--- a/templates/products.html
++++ b/templates/products.html
+@@ -100,9 +100,9 @@
+     chevron.classList.toggle('open', !isOpen);
+   }
+ 
+-  function fillRecipeForm(productId, materialId, quantityPerUnit) {
++  function fillRecipeForm(productId, materialId, batchAmount) {
+     document.getElementById('recipe-material-' + productId).value = materialId;
+-    document.getElementById('recipe-amount-' + productId).value = quantityPerUnit;
++    document.getElementById('recipe-amount-' + productId).value = batchAmount;
+     updateRecipeRow(productId);
+   }
+ 
+@@ -186,7 +186,7 @@
+         <div class="material-stat-line mono">
+           <span class="stat-label">{{ t('selling_price') }}:</span>${{ '%.2f'|format(item.product.price) }}
+           <span class="sep">·</span>
+-          <span class="stat-label">{{ t('cost_per_unit_calc') }}:</span>${{ '%.2f'|format(item.cost_per_unit) }}
++          <span class="stat-label">{{ t('cost_per_unit_calc') }}:</span>${{ item.cost_per_unit|money }}
+           {% if item.recipe %}
+           <span class="sep">·</span>
+           <span class="stat-label">{{ t('can_make_now') }}:</span><span class="{{ 'margin-neg' if item.max_producible == 0 else '' }}">{{ item.max_producible }}</span>
+@@ -204,10 +204,17 @@
+       <h4 class="recipe-subhead" style="margin-top:14px;">{{ t('recipe_title') }}</h4>
+       <p class="recipe-hint">{{ t('recipe_hint') }}</p>
+ 
++      <form method="POST" action="{{ url_for('set_batch_yield', product_id=item.product.id) }}" class="recipe-sentence-row" onclick="event.stopPropagation();" style="margin-bottom:10px;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
++        <span class="recipe-makes-word">{{ t('batch_yield_label') }}</span>
++        <input type="number" step="any" min="0" name="batch_yield_count" placeholder="30" class="recipe-num-input" value="{{ item.product.batch_yield_count|round(2) if item.product.batch_yield_count else '' }}">
++        <button type="submit" class="secondary">{{ t('set_batch_yield_btn') }}</button>
++      </form>
++
+       <div style="margin-bottom:14px;">
+         {% for r in item.recipe %}
+-        <span class="recipe-chip recipe-chip-editable" onclick="event.stopPropagation(); fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.quantity_per_unit }})">
+-          {{ r.material_name }} — {{ r.quantity_per_unit|round(4) }}{{ r.unit }} {{ t('per_unit_suffix') }}
++        <span class="recipe-chip recipe-chip-editable" onclick="event.stopPropagation(); fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.batch_qty }})">
++          {{ r.material_name }} — {{ r.batch_qty|round(4) }}{{ r.unit }} {{ t('per_batch_suffix') }}
++          <span class="recipe-chip-sub">(≈{{ r.quantity_per_unit|round(4) }}{{ r.unit }} {{ t('per_unit_suffix') }})</span>
+           <form method="POST" action="{{ url_for('remove_recipe_ingredient', ingredient_id=r.id) }}" class="inline-form" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+             <button type="submit" title="{{ t('delete_btn') }}">&times;</button>
+           </form>
+@@ -217,6 +224,7 @@
+         {% endfor %}
+       </div>
+ 
++      {% if item.product.batch_yield_count and item.product.batch_yield_count > 0 %}
+       <form method="POST" action="{{ url_for('add_recipe_ingredient', product_id=item.product.id) }}" class="recipe-form" id="recipe-form-{{ item.product.id }}" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+         <div class="recipe-sentence-row">
+           <select name="material_id" id="recipe-material-{{ item.product.id }}" required onchange="updateRecipeRow({{ item.product.id }})">
+@@ -225,15 +233,18 @@
+             <option value="{{ m.id }}" data-unit="{{ m.unit }}">{{ m.name }}</option>
+             {% endfor %}
+           </select>
+-          <input type="number" step="any" name="quantity_per_unit" id="recipe-amount-{{ item.product.id }}" placeholder="0.3" required class="recipe-num-input">
++          <input type="number" step="any" name="batch_amount" id="recipe-amount-{{ item.product.id }}" placeholder="2" required class="recipe-num-input">
+           <select name="entered_unit" id="recipe-unit-{{ item.product.id }}" class="recipe-unit-select" required>
+             <option value="">{{ t('unit_choose') }}</option>
+           </select>
+-          <span class="recipe-makes-word">{{ t('per_unit_suffix') }}</span>
++          <span class="recipe-makes-word">{{ t('per_batch_suffix') }}</span>
+           <button type="submit" class="secondary">{{ t('add_to_recipe_btn') }}</button>
+         </div>
+-        <p class="field-hint">{{ t('recipe_hint') }}</p>
++        <p class="field-hint">{{ t('batch_ingredient_hint') }}</p>
+       </form>
++      {% else %}
++      <p class="field-hint">⚠ {{ t('flash_batch_yield_required') }}</p>
++      {% endif %}
+     </div>
+     {% endfor %}
+   </div>
+diff --git a/translations.py b/translations.py
+index bfb927b..cde1117 100644
+--- a/translations.py
++++ b/translations.py
+@@ -139,14 +139,19 @@ TR = {
+         "selling_price_usd": "តម្លៃលក់ ($)",
+         "selling_price_riel": "តម្លៃលក់ (៛)",
+         "add_product_btn": "បន្ថែម",
+-        "recipe_title": "រូបមន្ត — តើផលិតផលមួយដុំប្រើប្រាស់វត្ថុធាតុដើមប៉ុន្មាន?",
+-        "recipe_hint": "ឧទាហរណ៍៖ អំបិល 0.3 ក្រាម ក្នុងមួយដុំ។ វាយបញ្ចូលចំនួនប្រើប្រាស់សម្រាប់មួយដុំដោយផ្ទាល់។",
++        "recipe_title": "រូបមន្ត — មួយឡប្រើវត្ថុធាតុដើមប៉ុន្មាន?",
++        "recipe_hint": "ឧទាហរណ៍៖ មួយឡប្រើម្សៅ ២គីឡូក្រាម ហើយផលិតបាននំ ៣០ដុំ។ ប្រព័ន្ធនឹងគណនាថ្លៃដើមក្នុងមួយដុំដោយស្វ័យប្រវត្តិ។",
++        "batch_yield_label": "តើមួយឡនេះផលិតបានប៉ុន្មានដុំ?",
++        "set_batch_yield_btn": "កំណត់",
++        "batch_yield_set_prefix": "មួយឡផលិតបាន",
+         "material_col": "វត្ថុធាតុដើម",
+         "batch_qty_label": "បរិមាណប្រើ",
+         "yield_count_label": "ផលិតបានប៉ុន្មានដុំ",
+         "add_to_recipe_btn": "បន្ថែមទៅរូបមន្ត",
+         "no_recipe_yet": "មិនទាន់មានរូបមន្តទេ — សូមបន្ថែមវត្ថុធាតុដើមប្រើប្រាស់ខាងក្រោម។",
+         "per_unit_suffix": "/ដុំ",
++        "per_batch_suffix": "ក្នុងមួយឡ",
++        "batch_ingredient_hint": "បញ្ចូលចំនួនសរុបប្រើប្រាស់ក្នុងឡនេះ (មិនមែនក្នុងមួយដុំទេ) — ប្រព័ន្ធនឹងបែងចែកដោយស្វ័យប្រវត្តិ។",
+         "makes_label": "ផលិតបាន",
+         "loaves_unit": "ដុំ",
+         "choose": "ជ្រើសរើស...",
+@@ -312,6 +317,11 @@ TR = {
+         "flash_product_name_required": "ត្រូវការឈ្មោះផលិតផល។",
+         "flash_recipe_updated": "រូបមន្តត្រូវបានធ្វើបច្ចុប្បន្នភាព។",
+         "flash_recipe_invalid": "សូមជ្រើសរើសវត្ថុធាតុដើម និងបញ្ចូលចំនួនត្រឹមត្រូវ។",
++        "flash_batch_yield_invalid": "សូមបញ្ចូលចំនួនត្រឹមត្រូវ (ធំជាងសូន្យ)។",
++        "flash_batch_yield_updated": "បានកែសម្រួលទំហំឡ ហើយបានគណនាថ្លៃដើមឡើងវិញ។",
++        "flash_batch_yield_set": "បានកំណត់ទំហំឡ។ ឥឡូវអាចបន្ថែមវត្ថុធាតុដើមបាន។",
++        "flash_batch_yield_set_recheck": "បានកំណត់ទំហំឡ។ សូមពិនិត្យវត្ថុធាតុដើមដែលមានស្រាប់ម្តងទៀត — លេខទាំងនោះអាចជាចំនួនប្រើប្រាស់ក្នុងមួយដុំពីមុន មិនមែនចំនួនសរុបក្នុងមួយឡទេ។",
++        "flash_batch_yield_required": "សូមកំណត់ថាមួយឡនេះផលិតបានប៉ុន្មានដុំសិន មុននឹងបន្ថែមវត្ថុធាតុដើម។",
+         "flash_ingredient_removed": "បានលុបវត្ថុធាតុដើមចេញពីរូបមន្ត។",
+         "flash_product_archived": "ផលិតផលនេះមានប្រវត្តិលក់ហើយ ដូច្នេះត្រូវបានទុកក្នុងបណ្ណសារ ជំនួសឱ្យការលុប។",
+         "flash_product_deleted": "បានលុបផលិតផល។",
+@@ -482,14 +492,19 @@ TR = {
+         "selling_price_usd": "Selling price ($)",
+         "selling_price_riel": "Selling price (៛)",
+         "add_product_btn": "Add product",
+-        "recipe_title": "Recipe — how much material does one unit use?",
+-        "recipe_hint": "Example: Salt 0.3g per unit. Type the amount one unit uses directly.",
++        "recipe_title": "Recipe — how much material does one batch use?",
++        "recipe_hint": "Example: one batch uses 2kg flour and makes 30 pieces. The system works out the cost per piece automatically.",
++        "batch_yield_label": "How many pieces does one batch make?",
++        "set_batch_yield_btn": "Set",
++        "batch_yield_set_prefix": "One batch makes",
+         "material_col": "Material",
+         "batch_qty_label": "Amount used",
+         "yield_count_label": "Makes how many",
+         "add_to_recipe_btn": "Add to recipe",
+         "no_recipe_yet": "No recipe set yet — add materials used below.",
+         "per_unit_suffix": "/unit",
++        "per_batch_suffix": "per batch",
++        "batch_ingredient_hint": "Enter the total amount used in this whole batch (not per piece) — it's divided automatically.",
+         "makes_label": "makes",
+         "loaves_unit": "units",
+         "choose": "Choose...",
+@@ -652,6 +667,11 @@ TR = {
+         "flash_product_name_required": "Product name is required.",
+         "flash_recipe_updated": "Recipe updated.",
+         "flash_recipe_invalid": "Choose a material and enter valid amounts.",
++        "flash_batch_yield_invalid": "Enter a valid number greater than zero.",
++        "flash_batch_yield_updated": "Batch size updated and ingredient costs recalculated.",
++        "flash_batch_yield_set": "Batch size set. You can add ingredients now.",
++        "flash_batch_yield_set_recheck": "Batch size set. Please double-check the existing ingredients below — those amounts may be old per-piece values, not batch totals.",
++        "flash_batch_yield_required": "Set how many pieces one batch makes before adding ingredients.",
+         "flash_ingredient_removed": "Ingredient removed from recipe.",
+         "flash_product_archived": "Product has order history, so it was archived instead of deleted.",
+         "flash_product_deleted": "Product deleted.",

@@ -244,6 +244,8 @@ def migrate_db():
         cur.execute("ALTER TABLE products ADD COLUMN category TEXT NOT NULL DEFAULT 'other'")
     if not column_exists("products", "available_qty"):
         cur.execute("ALTER TABLE products ADD COLUMN available_qty DOUBLE PRECISION NOT NULL DEFAULT 0")
+    if not column_exists("products", "batch_yield"):
+        cur.execute("ALTER TABLE products ADD COLUMN batch_yield DOUBLE PRECISION NOT NULL DEFAULT 1")
     if not column_exists("materials", "supplier_name"):
         cur.execute("ALTER TABLE materials ADD COLUMN supplier_name TEXT")
     if not column_exists("materials", "supplier_contact"):
@@ -275,6 +277,8 @@ UNIT_CONVERSION_FACTORS = {
     ("kg", "g"): 1000.0,
     ("ml", "l"): 0.001,
     ("l", "ml"): 1000.0,
+    ("pcs", "dozen"): 1.0 / 12.0,
+    ("dozen", "pcs"): 12.0,
 }
 
 
@@ -962,6 +966,17 @@ def add_product():
     else:
         price = 0.0
 
+    # "This batch makes: N pieces" — set once per product. Every ingredient
+    # amount entered on this product's recipe gets divided by this number to
+    # get cost-per-piece, so it must be a real, positive count; a blank or
+    # invalid entry falls back to 1 rather than silently breaking recipe math.
+    try:
+        batch_yield = float(request.form.get("batch_yield") or 0)
+    except ValueError:
+        batch_yield = 0
+    if batch_yield <= 0:
+        batch_yield = 1.0
+
     # A product that was "deleted" while it had order history is actually
     # archived, not removed (see delete_product) — its name is still taken.
     # Re-adding the same name should bring it back rather than fail with a
@@ -970,15 +985,18 @@ def add_product():
     existing = db.execute("SELECT id, active FROM products WHERE name = ?", (name,)).fetchone()
     if existing and not existing["active"]:
         db.execute(
-            "UPDATE products SET active = 1, price = ?, category = ? WHERE id = ?",
-            (price, category, existing["id"]),
+            "UPDATE products SET active = 1, price = ?, category = ?, batch_yield = ? WHERE id = ?",
+            (price, category, batch_yield, existing["id"]),
         )
         db.commit()
         flash(g.t("flash_product_reactivated", name=name), "success")
         return redirect(url_for("products"))
 
     try:
-        db.execute("INSERT INTO products (name, price, category) VALUES (?, ?, ?)", (name, price, category))
+        db.execute(
+            "INSERT INTO products (name, price, category, batch_yield) VALUES (?, ?, ?, ?)",
+            (name, price, category, batch_yield),
+        )
         db.commit()
         flash(g.t("flash_product_added", name=name), "success")
     except psycopg2.IntegrityError:
@@ -987,24 +1005,58 @@ def add_product():
     return redirect(url_for("products"))
 
 
+def recompute_product_recipe_costs(db, product_id, new_batch_yield):
+    """Re-derives cost-per-piece for every ingredient on a product after its
+    batch size changes. Each ingredient's batch_qty (total amount used per
+    full batch) is unchanged — only the per-piece split is recalculated."""
+    rows = db.execute(
+        "SELECT id, batch_qty FROM product_ingredients WHERE product_id = ?", (product_id,)
+    ).fetchall()
+    for row in rows:
+        quantity_per_unit = row["batch_qty"] / new_batch_yield
+        db.execute(
+            "UPDATE product_ingredients SET yield_count = ?, quantity_per_unit = ? WHERE id = ?",
+            (new_batch_yield, quantity_per_unit, row["id"]),
+        )
+
+
+@app.route("/products/<int:product_id>/batch-yield", methods=["POST"])
+@login_required
+def update_batch_yield(product_id):
+    db = get_db()
+    try:
+        batch_yield = float(request.form.get("batch_yield") or 0)
+    except ValueError:
+        batch_yield = 0
+
+    if batch_yield <= 0:
+        flash(g.t("flash_batch_yield_invalid"), "error")
+        return redirect(url_for("products", open=product_id))
+
+    db.execute("UPDATE products SET batch_yield = ? WHERE id = ?", (batch_yield, product_id))
+    recompute_product_recipe_costs(db, product_id, batch_yield)
+    db.commit()
+    flash(g.t("flash_batch_yield_updated"), "success")
+    return redirect(url_for("products", open=product_id))
+
+
 @app.route("/products/<int:product_id>/recipe/add", methods=["POST"])
 @login_required
 def add_recipe_ingredient(product_id):
-    """Records how much of one material a single unit of this product uses
-    — e.g. "Salt: 0.3g per unit" — entered directly rather than as a batch
-    that then gets divided by a yield count. The amount can be typed in any
+    """Records how much of one material the WHOLE BATCH uses — e.g. "2kg
+    flour" for a batch that makes 30 pieces — rather than asking her to
+    pre-calculate a per-piece amount herself. The amount can be typed in any
     unit compatible with the material's own stock unit (e.g. grams for a
-    material tracked in kg) and gets converted back before storing, since
-    every other calculation assumes quantity_per_unit is in that stock
-    unit. Stored in the same batch_qty / yield_count / quantity_per_unit
-    columns for compatibility (batch_qty is just set equal to the per-unit
-    amount, with yield_count fixed at 1), so no schema change is needed and
-    older recipes entered via batch math still display and edit correctly."""
+    material tracked in kg) and gets converted back before storing. The
+    per-piece amount (quantity_per_unit, used everywhere else in the app for
+    costing and stock deduction) is derived here by dividing the batch total
+    by the product's batch_yield, and gets re-derived automatically whenever
+    batch_yield changes (see recompute_product_recipe_costs)."""
     db = get_db()
     material_id = request.form.get("material_id")
     entered_unit = request.form.get("entered_unit", "").strip()
     try:
-        entered_amount = float(request.form.get("quantity_per_unit") or 0)
+        entered_amount = float(request.form.get("batch_total_qty") or 0)
     except ValueError:
         entered_amount = 0
 
@@ -1012,12 +1064,13 @@ def add_recipe_ingredient(product_id):
         flash(g.t("flash_recipe_invalid"), "error")
         return redirect(url_for("products"))
 
+    product = db.execute("SELECT batch_yield FROM products WHERE id = ?", (product_id,)).fetchone()
+    batch_yield = product["batch_yield"] if product and product["batch_yield"] > 0 else 1.0
+
     material = db.execute("SELECT unit FROM materials WHERE id = ?", (material_id,)).fetchone()
     base_unit = material["unit"] if material else entered_unit
-    quantity_per_unit = convert_amount_to_base_unit(entered_amount, entered_unit, base_unit)
-
-    batch_qty = quantity_per_unit
-    yield_count = 1
+    batch_qty = convert_amount_to_base_unit(entered_amount, entered_unit, base_unit)
+    quantity_per_unit = batch_qty / batch_yield
 
     existing = db.execute(
         "SELECT id FROM product_ingredients WHERE product_id = ? AND material_id = ?",
@@ -1026,13 +1079,13 @@ def add_recipe_ingredient(product_id):
     if existing:
         db.execute(
             "UPDATE product_ingredients SET batch_qty = ?, yield_count = ?, quantity_per_unit = ? WHERE id = ?",
-            (batch_qty, yield_count, quantity_per_unit, existing["id"]),
+            (batch_qty, batch_yield, quantity_per_unit, existing["id"]),
         )
     else:
         db.execute(
             "INSERT INTO product_ingredients (product_id, material_id, batch_qty, yield_count, quantity_per_unit) "
             "VALUES (?, ?, ?, ?, ?)",
-            (product_id, material_id, batch_qty, yield_count, quantity_per_unit),
+            (product_id, material_id, batch_qty, batch_yield, quantity_per_unit),
         )
     db.commit()
     flash(g.t("flash_recipe_updated"), "success")
