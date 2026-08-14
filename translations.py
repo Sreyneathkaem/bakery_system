@@ -354,6 +354,15 @@ TR = {
         "total_paid_riel_ph": "សរុបបង់ (៛)",
         "total_paid_hint": "ជាជម្រើស៖ បញ្ចូលចំនួនទឹកប្រាក់សរុបដែលបានបង់សម្រាប់ការទិញនេះ ដើម្បីអោយប្រព័ន្ធគណនាថ្លៃដើម/ឯកតាឡើងវិញដោយស្វ័យប្រវត្តិ (មធ្យមភាគទម្ងន់)។",
 
+        # Exchange rate (Settings page)
+        "exchange_rate_title": "អត្រាប្តូរប្រាក់",
+        "exchange_rate_sub": "កំណត់អត្រា ដុល្លារ → រៀល។ វានឹងប៉ះពាល់ដល់ការគណនាទឹកប្រាក់រៀលទាំងអស់ក្នុងកម្មវិធី (វត្ថុធាតុដើម ផលិតផល ការកម្ម៉ង់ វិក្កយបត្រ របាយការណ៍)។",
+        "exchange_rate_label": "១ ដុល្លារ ស្មើ (៛)",
+        "exchange_rate_current": "អត្រាបច្ចុប្បន្ន",
+        "exchange_rate_save_btn": "រក្សាទុកអត្រា",
+        "exchange_rate_updated": "បានធ្វើបច្ចុប្បន្នភាពអត្រាប្តូរប្រាក់។",
+        "exchange_rate_invalid": "សូមបញ្ចូលអត្រាដែលត្រឹមត្រូវ (ធំជាងសូន្យ)។",
+
         # Reset test data (Settings page)
         "reset_title": "កំណត់ទិន្នន័យសាកល្បងឡើងវិញ",
         "reset_sub": "សម្រាប់សម្អាតទិន្នន័យសាកល្បង មុននឹងអោយប្អូនស្រីចាប់ផ្តើមប្រើប្រាស់ជាក់ស្តែង។ សកម្មភាពនេះមិនអាចត្រឡប់វិញបានទេ។",
@@ -709,6 +718,15 @@ TR = {
         "total_paid_usd_ph": "Total paid ($)",
         "total_paid_riel_ph": "Total paid (៛)",
         "total_paid_hint": "Optional: enter the total amount paid for this restock, and the app will recalculate cost/unit automatically (weighted average).",
+
+        # Exchange rate (Settings page)
+        "exchange_rate_title": "Exchange rate",
+        "exchange_rate_sub": "Set the USD → Riel rate. This affects every Riel conversion in the app (materials, products, orders, invoices, reports).",
+        "exchange_rate_label": "1 USD equals (៛)",
+        "exchange_rate_current": "Current rate",
+        "exchange_rate_save_btn": "Save rate",
+        "exchange_rate_updated": "Exchange rate updated.",
+        "exchange_rate_invalid": "Enter a valid rate (greater than zero).",
 
         # Reset test data (Settings page)
         "reset_title": "Reset test data",

@@ -72,8 +72,12 @@ def handle_too_large(e):
 SHOP_NAME = os.environ.get("SHOP_NAME", "ពងទាប្រៃបេកខេរី")
 SHOP_PHONE = os.environ.get("SHOP_PHONE", "")
 
-# Used to show cost in both USD and Riel. Update if the rate changes a lot.
-KHR_PER_USD = float(os.environ.get("KHR_PER_USD", "4100"))
+# Used to show cost in both USD and Riel. This is only the starting
+# default — once the app has run once, the real rate lives in the
+# app_settings table and is editable from the Settings tab (see
+# get_khr_per_usd/set_khr_per_usd below), so it can change without a
+# redeploy.
+DEFAULT_KHR_PER_USD = float(os.environ.get("KHR_PER_USD", "4100"))
 
 # Optional: set these to enable the "Send to shop Telegram" button on
 # invoices. See README.md for how to create a bot and find a chat ID.
@@ -280,11 +284,12 @@ def format_money(value):
 
 
 def usd_to_riel(usd):
-    return usd * KHR_PER_USD
+    return usd * get_khr_per_usd()
 
 
 def riel_to_usd(riel):
-    return riel / KHR_PER_USD if KHR_PER_USD else 0
+    rate = get_khr_per_usd()
+    return riel / rate if rate else 0
 
 
 # Recipe amounts can be typed in a different (but compatible) unit than how
@@ -455,6 +460,36 @@ def clear_qr_upload():
     db.commit()
 
 
+def get_khr_per_usd():
+    """Returns the current USD->Riel exchange rate. Cached on `g` so a
+    single request only hits the database once even though this is called
+    from several places (context processor, usd_to_riel/riel_to_usd,
+    templates). Falls back to DEFAULT_KHR_PER_USD until someone sets a
+    rate from the Settings tab."""
+    if not hasattr(g, "_khr_per_usd"):
+        db = get_db()
+        row = db.execute("SELECT value FROM app_settings WHERE key = 'khr_per_usd'").fetchone()
+        rate = None
+        if row and row["value"]:
+            try:
+                rate = float(row["value"])
+            except (TypeError, ValueError):
+                rate = None
+        g._khr_per_usd = rate if rate and rate > 0 else DEFAULT_KHR_PER_USD
+    return g._khr_per_usd
+
+
+def set_khr_per_usd(rate):
+    db = get_db()
+    db.execute(
+        "INSERT INTO app_settings (key, value) VALUES ('khr_per_usd', ?) "
+        "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+        (str(rate),),
+    )
+    db.commit()
+    g._khr_per_usd = rate
+
+
 def send_telegram_message(chat_id, text):
     """Sends a plain-text message via the Telegram Bot API using only the
     standard library (no extra dependency needed). Returns (ok, error_msg)."""
@@ -563,6 +598,16 @@ def set_language():
 @app.context_processor
 def inject_translator():
     return {"t": g.t, "current_lang": session.get("lang", DEFAULT_LANG)}
+
+
+@app.context_processor
+def inject_khr_per_usd():
+    # Only fetch once a user is logged in (the login page itself has no
+    # need for it, and no db connection should be opened for anonymous
+    # visitors hitting that route).
+    if session.get("user_email"):
+        return {"khr_per_usd": get_khr_per_usd()}
+    return {}
 
 
 @app.route("/lang/<code>")
@@ -746,7 +791,6 @@ def materials():
     return render_template(
         "materials.html",
         materials=rows,
-        khr_per_usd=KHR_PER_USD,
         history_by_material=history_by_material,
         bake_products=bake_products,
         bake_products_json=json.dumps(bake_products),
@@ -1061,7 +1105,6 @@ def products():
         "products.html",
         products=products_with_recipes,
         all_materials=all_materials,
-        khr_per_usd=KHR_PER_USD,
         open_product_id=open_product_id,
     )
 
@@ -1588,7 +1631,6 @@ def order_invoice(order_id):
         invoice_text=invoice_text,
         shop_name=SHOP_NAME,
         shop_phone=SHOP_PHONE,
-        khr_per_usd=KHR_PER_USD,
         telegram_shop_enabled=bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID),
         has_qr=bool(get_qr_data()),
     )
@@ -1725,7 +1767,6 @@ def reports():
         material_cost=totals["cost"],
         net_profit=totals["income"] - total_expenses - totals["cost"],
         recent_expenses=recent_expenses,
-        khr_per_usd=KHR_PER_USD,
     )
 
 
@@ -1734,7 +1775,26 @@ def reports():
 @app.route("/settings")
 @login_required
 def settings():
-    return render_template("settings.html", qr_filename=("payment_qr" if get_qr_data() else None))
+    return render_template(
+        "settings.html",
+        qr_filename=("payment_qr" if get_qr_data() else None),
+    )
+
+
+@app.route("/settings/exchange-rate", methods=["POST"])
+@login_required
+def update_exchange_rate():
+    raw = request.form.get("khr_per_usd", "").strip()
+    try:
+        rate = float(raw)
+    except (TypeError, ValueError):
+        rate = 0
+    if rate <= 0:
+        flash(g.t("exchange_rate_invalid"), "error")
+        return redirect(url_for("settings"))
+    set_khr_per_usd(rate)
+    flash(g.t("exchange_rate_updated"), "success")
+    return redirect(url_for("settings"))
 
 
 @app.route("/settings/qr/upload", methods=["POST"])

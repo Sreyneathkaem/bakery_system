@@ -50,6 +50,22 @@
   </div>
 </div>
 
+<div class="section">
+  <div class="card">
+    <h3>{{ t('exchange_rate_title') }}</h3>
+    <p class="field-hint" style="margin-bottom:14px;">{{ t('exchange_rate_sub') }}</p>
+
+    <form method="POST" action="{{ url_for('update_exchange_rate') }}" class="form-row" style="align-items:flex-end;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="khr_per_usd">{{ t('exchange_rate_label') }}</label>
+        <input type="number" step="any" min="0" id="khr_per_usd" name="khr_per_usd" value="{{ khr_per_usd }}" style="width:140px" required>
+      </div>
+      <button type="submit">{{ t('exchange_rate_save_btn') }}</button>
+    </form>
+  </div>
+</div>
+
 <script>
   (function () {
     const fileInput = document.getElementById('qr-file-input');
