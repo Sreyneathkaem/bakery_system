@@ -144,10 +144,7 @@
     box: ['box'],
   };
 
-  function updateRecipeRow(productId) {
-    const materialSelect = document.getElementById('recipe-material-' + productId);
-    const unitSelect = document.getElementById('recipe-unit-' + productId);
-
+  function updateUnitSelectFor(materialSelect, unitSelect) {
     const selectedOption = materialSelect.options[materialSelect.selectedIndex];
     const baseUnit = selectedOption ? (selectedOption.dataset.unit || '') : '';
     const choices = baseUnit ? (UNIT_COMPATIBLE[baseUnit] || [baseUnit]) : [];
@@ -169,6 +166,45 @@
     unitSelect.value = baseUnit;
   }
 
+  function updateRecipeRow(productId) {
+    updateUnitSelectFor(
+      document.getElementById('recipe-material-' + productId),
+      document.getElementById('recipe-unit-' + productId)
+    );
+  }
+
+  function updateTemplateItemRow(templateId) {
+    updateUnitSelectFor(
+      document.getElementById('template-material-' + templateId),
+      document.getElementById('template-unit-' + templateId)
+    );
+  }
+
+  // Recipe presets accordion + toggle, mirroring toggleAddForm/
+  // toggleProductDetail above but kept independent so opening a preset
+  // doesn't collapse whichever product panel she has open.
+  function toggleTemplatesSection() {
+    const card = document.getElementById('templates-card');
+    const btn = document.getElementById('toggle-templates-btn');
+    const isHidden = card.style.display === 'none';
+    card.style.display = isHidden ? 'block' : 'none';
+    btn.textContent = isHidden ? '{{ t("close_btn") }}' : '{{ t("recipe_presets_toggle") }}';
+  }
+
+  function toggleTemplateDetail(id) {
+    document.querySelectorAll('.template-detail-panel').forEach(function (el) {
+      if (el.id !== 'tpl-detail-' + id) el.style.display = 'none';
+    });
+    document.querySelectorAll('.template-row-chevron').forEach(function (el) {
+      if (el.id !== 'tpl-chevron-' + id) el.classList.remove('open');
+    });
+    const panel = document.getElementById('tpl-detail-' + id);
+    const chevron = document.getElementById('tpl-chevron-' + id);
+    const isOpen = panel.style.display === 'block';
+    panel.style.display = isOpen ? 'none' : 'block';
+    chevron.classList.toggle('open', !isOpen);
+  }
+
   // After adding/removing a recipe ingredient, the server redirects back
   // with ?open=<product_id> so this product's panel re-expands instead of
   // the whole list collapsing — lets her add several ingredients to the
@@ -181,6 +217,86 @@
   });
   {% endif %}
 </script>
+
+<div class="section">
+  <div class="materials-toolbar">
+    <span class="materials-count">{{ t('templates_count', count=templates|length) }}</span>
+    <button type="button" class="btn secondary" id="toggle-templates-btn" onclick="toggleTemplatesSection()">{{ t('recipe_presets_toggle') }}</button>
+  </div>
+
+  <div class="card" id="templates-card" style="display:none; margin-bottom:16px;">
+    <h3 style="margin-top:0;">{{ t('recipe_presets_title') }}</h3>
+    <p class="field-hint" style="margin-bottom:14px;">{{ t('recipe_presets_hint') }}</p>
+
+    <form method="POST" action="{{ url_for('add_template') }}" class="form-grid" style="margin-bottom:16px;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="template-name">{{ t('preset_name_label') }}</label>
+        <input type="text" id="template-name" name="name" placeholder="{{ t('preset_name_ph') }}" required>
+      </div>
+      <div class="field field-submit">
+        <label>&nbsp;</label>
+        <button type="submit" class="secondary">{{ t('add_preset_btn') }}</button>
+      </div>
+    </form>
+
+    {% if templates %}
+    <div class="product-list">
+      {% for tpl in templates %}
+      <div class="product-row" onclick="toggleTemplateDetail({{ tpl.template.id }})">
+        <div class="product-row-main">
+          <div class="product-row-name">{{ tpl.template.name }}</div>
+          <div class="product-row-sub">{{ tpl.items|length }} {{ t('ingredients_word') }}</div>
+        </div>
+        <div class="product-row-right">
+          <span class="product-row-chevron template-row-chevron" id="tpl-chevron-{{ tpl.template.id }}">›</span>
+        </div>
+      </div>
+
+      <div class="product-detail-panel template-detail-panel" id="tpl-detail-{{ tpl.template.id }}" style="display:none;">
+        <div class="material-card-head" style="padding-top:14px;">
+          <div></div>
+          <form method="POST" action="{{ url_for('delete_template', template_id=tpl.template.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_preset', name=tpl.template.name) }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="danger-btn">{{ t('delete_btn') }}</button>
+          </form>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          {% for it in tpl.items %}
+          <span class="recipe-chip">
+            {{ it.material_name }} — {{ it.batch_qty|round(4) }}{{ it.unit }}
+            <form method="POST" action="{{ url_for('remove_template_item', item_id=it.id) }}" class="inline-form" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" title="{{ t('delete_btn') }}">&times;</button>
+            </form>
+          </span>
+          {% else %}
+          <span style="color:#8A7A63; font-size:0.88rem;">{{ t('no_recipe_yet') }}</span>
+          {% endfor %}
+        </div>
+
+        <form method="POST" action="{{ url_for('add_template_item', template_id=tpl.template.id) }}" class="recipe-form" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="recipe-sentence-row">
+            <select name="material_id" id="template-material-{{ tpl.template.id }}" required onchange="updateTemplateItemRow({{ tpl.template.id }})">
+              <option value="" disabled selected>{{ t('choose') }}</option>
+              {% for m in all_materials %}
+              <option value="{{ m.id }}" data-unit="{{ m.unit }}">{{ m.name }}</option>
+              {% endfor %}
+            </select>
+            <input type="number" step="any" name="batch_total_qty" placeholder="2" required class="recipe-num-input">
+            <select name="entered_unit" id="template-unit-{{ tpl.template.id }}" class="recipe-unit-select" required>
+              <option value="">{{ t('unit_choose') }}</option>
+            </select>
+            <span class="recipe-makes-word">{{ t('per_batch_suffix') }}</span>
+            <button type="submit" class="secondary">{{ t('add_to_recipe_btn') }}</button>
+          </div>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">{{ t('no_presets_yet') }}</div>
+    {% endif %}
+  </div>
+</div>
 
 <div class="section">
   {% if products %}
@@ -243,6 +359,18 @@
       <h4 class="recipe-subhead" style="margin-top:14px;">{{ t('recipe_title') }}</h4>
       <p class="recipe-hint">{{ t('recipe_hint') }}</p>
 
+      {% if templates %}
+      <form method="POST" action="{{ url_for('apply_template', product_id=item.product.id) }}" class="inline-form" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:10px;" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <select name="template_id" style="max-width:180px;">
+          <option value="" disabled selected>{{ t('choose_preset_ph') }}</option>
+          {% for tpl in templates %}
+          <option value="{{ tpl.template.id }}">{{ tpl.template.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="secondary btn-sm">{{ t('apply_preset_btn') }}</button>
+      </form>
+      {% endif %}
+
       <div style="margin-bottom:14px;">
         {% for r in item.recipe %}
         <span class="recipe-chip recipe-chip-editable" onclick="event.stopPropagation(); fillRecipeForm({{ item.product.id }}, {{ r.material_id }}, {{ r.batch_qty }})">
@@ -275,6 +403,13 @@
         </div>
         <p class="field-hint">{{ t('recipe_hint') }}</p>
       </form>
+
+      {% if item.recipe %}
+      <form method="POST" action="{{ url_for('save_product_as_template', product_id=item.product.id) }}" class="inline-form" style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="text" name="template_name" placeholder="{{ t('preset_name_ph') }}" style="max-width:160px;" required>
+        <button type="submit" class="secondary btn-sm">{{ t('save_as_preset_btn') }}</button>
+      </form>
+      {% endif %}
     </div>
     {% endfor %}
   </div>

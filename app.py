@@ -847,6 +847,15 @@ def add_material():
                 (mat_id, stock_qty, note),
             )
             db.commit()
+            # Money actually spent buying this material counts as a real
+            # business expense — logged automatically here so it shows up
+            # in Reports' totals without her having to enter it a second time.
+            if total_cost is not None and total_cost > 0:
+                db.execute(
+                    "INSERT INTO expenses (category, amount, note) VALUES (?, ?, ?)",
+                    (g.t("expense_category_material_purchase"), total_cost, name),
+                )
+                db.commit()
         flash(g.t("flash_material_added", name=name), "success")
     except psycopg2.IntegrityError:
         flash(g.t("flash_material_exists", name=name), "error")
@@ -943,6 +952,13 @@ def restock_material(material_id):
             "UPDATE materials SET stock_qty = stock_qty + ?, cost_per_unit = ? WHERE id = ?",
             (qty, weighted_cost, material_id),
         )
+        # Same as on Add material: what was actually paid for this restock
+        # counts as a real expense, logged automatically so it rolls into
+        # Reports without a duplicate manual entry.
+        db.execute(
+            "INSERT INTO expenses (category, amount, note) VALUES (?, ?, ?)",
+            (g.t("expense_category_material_purchase"), total_cost, material["name"]),
+        )
     else:
         db.execute("UPDATE materials SET stock_qty = stock_qty + ? WHERE id = ?", (qty, material_id))
 
@@ -988,6 +1004,43 @@ def delete_material(material_id):
     db.execute("DELETE FROM materials WHERE id = ?", (material_id,))
     db.commit()
     flash(g.t("flash_material_deleted"), "success")
+    return redirect(url_for("materials"))
+
+
+@app.route("/materials/<int:material_id>/reset", methods=["POST"])
+@login_required
+def reset_material(material_id):
+    """Clears out test/placeholder stock and cost for one material — the
+    name and unit are left untouched, only stock_qty and cost_per_unit go
+    back to zero, with a logged adjustment so the change is traceable."""
+    db = get_db()
+    material = db.execute("SELECT * FROM materials WHERE id = ?", (material_id,)).fetchone()
+    if not material:
+        return redirect(url_for("materials"))
+    if material["stock_qty"] != 0:
+        db.execute(
+            "INSERT INTO stock_transactions (material_id, change_qty, reason, note) VALUES (?, ?, 'adjustment', ?)",
+            (material_id, -material["stock_qty"], "Reset stock & cost"),
+        )
+    db.execute("UPDATE materials SET stock_qty = 0, cost_per_unit = 0 WHERE id = ?", (material_id,))
+    db.commit()
+    flash(g.t("flash_material_reset", name=material["name"]), "success")
+    return redirect(url_for("materials"))
+
+
+@app.route("/materials/reset-all", methods=["POST"])
+@login_required
+def reset_all_materials():
+    """Same as reset_material but for every material at once — for
+    clearing out a batch of test data in one go."""
+    db = get_db()
+    db.execute(
+        "INSERT INTO stock_transactions (material_id, change_qty, reason, note) "
+        "SELECT id, -stock_qty, 'adjustment', 'Reset stock & cost' FROM materials WHERE stock_qty != 0"
+    )
+    db.execute("UPDATE materials SET stock_qty = 0, cost_per_unit = 0")
+    db.commit()
+    flash(g.t("flash_materials_reset_all"), "success")
     return redirect(url_for("materials"))
 
 
@@ -1100,12 +1153,24 @@ def products():
             "unweighed_ingredients": unweighed,
         })
 
+    template_rows = db.execute("SELECT * FROM recipe_templates ORDER BY name ASC").fetchall()
+    templates_with_items = []
+    for tpl in template_rows:
+        items = db.execute(
+            "SELECT recipe_template_items.*, materials.name as material_name, materials.unit "
+            "FROM recipe_template_items JOIN materials ON materials.id = recipe_template_items.material_id "
+            "WHERE template_id = ?",
+            (tpl["id"],),
+        ).fetchall()
+        templates_with_items.append({"template": tpl, "items": items})
+
     open_product_id = request.args.get("open", type=int)
     return render_template(
         "products.html",
         products=products_with_recipes,
         all_materials=all_materials,
         open_product_id=open_product_id,
+        templates=templates_with_items,
     )
 
 
@@ -1298,6 +1363,161 @@ def delete_product(product_id):
         db.commit()
         flash(g.t("flash_product_deleted"), "success")
     return redirect(url_for("products"))
+
+
+# ---------- Recipe presets/templates (reusable groups of materials) ----------
+
+@app.route("/templates/add", methods=["POST"])
+@login_required
+def add_template():
+    db = get_db()
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash(g.t("flash_template_name_required"), "error")
+        return redirect(url_for("products"))
+    try:
+        db.execute("INSERT INTO recipe_templates (name) VALUES (?)", (name,))
+        db.commit()
+        flash(g.t("flash_template_added", name=name), "success")
+    except psycopg2.IntegrityError:
+        flash(g.t("flash_template_exists", name=name), "error")
+    return redirect(url_for("products"))
+
+
+@app.route("/templates/<int:template_id>/delete", methods=["POST"])
+@login_required
+def delete_template(template_id):
+    db = get_db()
+    db.execute("DELETE FROM recipe_template_items WHERE template_id = ?", (template_id,))
+    db.execute("DELETE FROM recipe_templates WHERE id = ?", (template_id,))
+    db.commit()
+    flash(g.t("flash_template_deleted"), "success")
+    return redirect(url_for("products"))
+
+
+@app.route("/templates/<int:template_id>/items/add", methods=["POST"])
+@login_required
+def add_template_item(template_id):
+    """Same entered-amount / entered-unit conversion as add_recipe_ingredient,
+    but stored against a preset instead of a specific product's recipe."""
+    db = get_db()
+    material_id = request.form.get("material_id")
+    entered_unit = request.form.get("entered_unit", "").strip()
+    try:
+        entered_amount = float(request.form.get("batch_total_qty") or 0)
+    except ValueError:
+        entered_amount = 0
+
+    if not material_id or entered_amount <= 0:
+        flash(g.t("flash_recipe_invalid"), "error")
+        return redirect(url_for("products"))
+
+    material = db.execute("SELECT unit FROM materials WHERE id = ?", (material_id,)).fetchone()
+    base_unit = material["unit"] if material else entered_unit
+    batch_qty = convert_amount_to_base_unit(entered_amount, entered_unit, base_unit)
+
+    existing = db.execute(
+        "SELECT id FROM recipe_template_items WHERE template_id = ? AND material_id = ?",
+        (template_id, material_id),
+    ).fetchone()
+    if existing:
+        db.execute("UPDATE recipe_template_items SET batch_qty = ? WHERE id = ?", (batch_qty, existing["id"]))
+    else:
+        db.execute(
+            "INSERT INTO recipe_template_items (template_id, material_id, batch_qty) VALUES (?, ?, ?)",
+            (template_id, material_id, batch_qty),
+        )
+    db.commit()
+    flash(g.t("flash_template_updated"), "success")
+    return redirect(url_for("products"))
+
+
+@app.route("/templates/items/<int:item_id>/remove", methods=["POST"])
+@login_required
+def remove_template_item(item_id):
+    db = get_db()
+    db.execute("DELETE FROM recipe_template_items WHERE id = ?", (item_id,))
+    db.commit()
+    flash(g.t("flash_template_item_removed"), "success")
+    return redirect(url_for("products"))
+
+
+@app.route("/products/<int:product_id>/apply-template", methods=["POST"])
+@login_required
+def apply_template(product_id):
+    """Copies every material+amount from a saved preset straight into this
+    product's recipe in one action, instead of her re-entering each
+    material by hand. Batch size and per-piece costs are then re-derived
+    the same way as after any other recipe change."""
+    db = get_db()
+    template_id = request.form.get("template_id")
+    if not template_id:
+        flash(g.t("flash_template_choose"), "error")
+        return redirect(url_for("products", open=product_id))
+
+    items = db.execute(
+        "SELECT * FROM recipe_template_items WHERE template_id = ?", (template_id,)
+    ).fetchall()
+    if not items:
+        flash(g.t("flash_template_empty"), "error")
+        return redirect(url_for("products", open=product_id))
+
+    for item in items:
+        existing = db.execute(
+            "SELECT id FROM product_ingredients WHERE product_id = ? AND material_id = ?",
+            (product_id, item["material_id"]),
+        ).fetchone()
+        if existing:
+            db.execute(
+                "UPDATE product_ingredients SET batch_qty = ?, yield_count = 1, quantity_per_unit = 0 WHERE id = ?",
+                (item["batch_qty"], existing["id"]),
+            )
+        else:
+            db.execute(
+                "INSERT INTO product_ingredients (product_id, material_id, batch_qty, yield_count, quantity_per_unit) "
+                "VALUES (?, ?, ?, 1, 0)",
+                (product_id, item["material_id"], item["batch_qty"]),
+            )
+    recompute_batch_yield(db, product_id)
+    db.commit()
+    flash(g.t("flash_template_applied"), "success")
+    return redirect(url_for("products", open=product_id))
+
+
+@app.route("/products/<int:product_id>/save-as-template", methods=["POST"])
+@login_required
+def save_product_as_template(product_id):
+    """The reverse direction: turn a product's current recipe into a
+    reusable preset, so a recipe she already built can be applied to other
+    products later without retyping it."""
+    db = get_db()
+    name = request.form.get("template_name", "").strip()
+    if not name:
+        flash(g.t("flash_template_name_required"), "error")
+        return redirect(url_for("products", open=product_id))
+
+    recipe = db.execute(
+        "SELECT material_id, batch_qty FROM product_ingredients WHERE product_id = ?", (product_id,)
+    ).fetchall()
+    if not recipe:
+        flash(g.t("flash_template_empty"), "error")
+        return redirect(url_for("products", open=product_id))
+
+    try:
+        cursor = db.execute("INSERT INTO recipe_templates (name) VALUES (?) RETURNING id", (name,))
+        template_id = cursor.fetchone()["id"]
+    except psycopg2.IntegrityError:
+        flash(g.t("flash_template_exists", name=name), "error")
+        return redirect(url_for("products", open=product_id))
+
+    for r in recipe:
+        db.execute(
+            "INSERT INTO recipe_template_items (template_id, material_id, batch_qty) VALUES (?, ?, ?)",
+            (template_id, r["material_id"], r["batch_qty"]),
+        )
+    db.commit()
+    flash(g.t("flash_template_saved_from_product", name=name), "success")
+    return redirect(url_for("products", open=product_id))
 
 
 # ---------- Orders (customer orders, multi-item, real-time stock deduction) ----------
@@ -1716,6 +1936,51 @@ def add_expense():
     )
     db.commit()
     flash(g.t("flash_expense_logged"), "success")
+    return redirect(url_for("reports"))
+
+
+@app.route("/expenses/<int:expense_id>/edit", methods=["POST"])
+@login_required
+def edit_expense(expense_id):
+    db = get_db()
+    existing = db.execute("SELECT * FROM expenses WHERE id = ?", (expense_id,)).fetchone()
+    if not existing:
+        flash(g.t("flash_expense_invalid"), "error")
+        return redirect(url_for("reports"))
+
+    category = request.form.get("category", "").strip()
+    amount_usd_raw = request.form.get("amount_usd", "").strip()
+    amount_riel_raw = request.form.get("amount_riel", "").strip()
+    note = request.form.get("note", "").strip()
+
+    if amount_usd_raw:
+        amount = float(amount_usd_raw)
+    elif amount_riel_raw:
+        amount = riel_to_usd(float(amount_riel_raw))
+    else:
+        # No new amount entered — keep whatever was already saved.
+        amount = existing["amount"]
+
+    if not category or amount <= 0:
+        flash(g.t("flash_expense_invalid"), "error")
+        return redirect(url_for("reports"))
+
+    db.execute(
+        "UPDATE expenses SET category = ?, amount = ?, note = ? WHERE id = ?",
+        (category, amount, note or None, expense_id),
+    )
+    db.commit()
+    flash(g.t("flash_expense_updated"), "success")
+    return redirect(url_for("reports"))
+
+
+@app.route("/expenses/<int:expense_id>/delete", methods=["POST"])
+@login_required
+def delete_expense(expense_id):
+    db = get_db()
+    db.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+    db.commit()
+    flash(g.t("flash_expense_deleted"), "success")
     return redirect(url_for("reports"))
 
 

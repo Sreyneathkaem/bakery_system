@@ -150,7 +150,14 @@
 <div class="section">
   <div class="materials-toolbar">
     <span class="materials-count">{{ t('materials_count', count=materials|length) }}</span>
-    <button type="button" class="btn" id="toggle-add-btn" onclick="toggleAddForm()">{{ t('add_material_toggle') }}</button>
+    <div style="display:flex; gap:8px;">
+      {% if materials %}
+      <form method="POST" action="{{ url_for('reset_all_materials') }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_reset_all_materials') }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn secondary">{{ t('reset_all_materials_btn') }}</button>
+      </form>
+      {% endif %}
+      <button type="button" class="btn" id="toggle-add-btn" onclick="toggleAddForm()">{{ t('add_material_toggle') }}</button>
+    </div>
   </div>
 
   <div class="card" id="add-form-card" style="display:none;">
@@ -313,6 +320,9 @@
         <div class="more-menu" id="more-menu-{{ m.id }}" style="display:none;">
           <button type="button" class="more-menu-item" onclick="togglePanel('edit-{{ m.id }}'); closeMoreMenu({{ m.id }});">{{ t('edit_btn') }}</button>
           <button type="button" class="more-menu-item" onclick="togglePanel('history-{{ m.id }}'); closeMoreMenu({{ m.id }});">{{ t('history_btn') }}</button>
+          <form method="POST" action="{{ url_for('reset_material', material_id=m.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_reset_material', name=m.name) }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="more-menu-item">{{ t('reset_material_btn') }}</button>
+          </form>
           <form method="POST" action="{{ url_for('delete_material', material_id=m.id) }}" class="inline-form" onsubmit="return confirm('{{ t('confirm_delete_material', name=m.name) }}');"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="more-menu-item more-menu-danger">{{ t('delete_btn')}}</button>
           </form>

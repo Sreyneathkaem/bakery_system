@@ -81,3 +81,20 @@ CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Reusable recipe presets (e.g. "Standard dough mix"): a named group of
+-- materials with fixed batch amounts, so a repeated combination can be
+-- applied to a product's recipe in one click instead of adding each
+-- material one by one.
+CREATE TABLE IF NOT EXISTS recipe_templates (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS recipe_template_items (
+    id SERIAL PRIMARY KEY,
+    template_id INTEGER NOT NULL REFERENCES recipe_templates(id),
+    material_id INTEGER NOT NULL REFERENCES materials(id),
+    batch_qty DOUBLE PRECISION NOT NULL  -- amount of this material, in the material's own stock unit
+);
