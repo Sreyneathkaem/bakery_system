@@ -259,6 +259,14 @@ def migrate_db():
         cur.execute("ALTER TABLE materials ADD COLUMN supplier_contact TEXT")
     if not column_exists("materials", "notes"):
         cur.execute("ALTER TABLE materials ADD COLUMN notes TEXT")
+    if not column_exists("product_ingredients", "batch_qty"):
+        cur.execute("ALTER TABLE product_ingredients ADD COLUMN batch_qty DOUBLE PRECISION")
+        cur.execute("UPDATE product_ingredients SET batch_qty = quantity_per_unit WHERE batch_qty IS NULL")
+        cur.execute("ALTER TABLE product_ingredients ALTER COLUMN batch_qty SET NOT NULL")
+    if not column_exists("product_ingredients", "yield_count"):
+        cur.execute("ALTER TABLE product_ingredients ADD COLUMN yield_count DOUBLE PRECISION")
+        cur.execute("UPDATE product_ingredients SET yield_count = 1 WHERE yield_count IS NULL")
+        cur.execute("ALTER TABLE product_ingredients ALTER COLUMN yield_count SET NOT NULL")
 
     conn.commit()
     cur.close()
@@ -1371,7 +1379,7 @@ def delete_product(product_id):
 @login_required
 def add_template():
     db = get_db()
-    name = request.form.get("name", "").strip()
+    name = request.form.get("preset_name", "").strip()
     if not name:
         flash(g.t("flash_template_name_required"), "error")
         return redirect(url_for("products"))

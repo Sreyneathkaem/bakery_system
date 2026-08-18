@@ -19,7 +19,7 @@
     <form method="POST" action="{{ url_for('add_product') }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="name">{{ t('name') }}</label>
-        <input type="text" id="name" name="name" placeholder="{{ t('product_name_ph') }}" required>
+        <input type="text" id="name" name="name" autocomplete="off" placeholder="{{ t('product_name_ph') }}" required>
       </div>
       <div class="field">
         <label for="price_usd">{{ t('selling_price_usd') }}</label>
@@ -231,7 +231,7 @@
     <form method="POST" action="{{ url_for('add_template') }}" class="form-grid" style="margin-bottom:16px;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="template-name">{{ t('preset_name_label') }}</label>
-        <input type="text" id="template-name" name="name" placeholder="{{ t('preset_name_ph') }}" required>
+        <input type="text" id="template-name" name="preset_name" autocomplete="off" placeholder="{{ t('preset_name_ph') }}" required>
       </div>
       <div class="field field-submit">
         <label>&nbsp;</label>
@@ -245,7 +245,7 @@
       <div class="product-row" onclick="toggleTemplateDetail({{ tpl.template.id }})">
         <div class="product-row-main">
           <div class="product-row-name">{{ tpl.template.name }}</div>
-          <div class="product-row-sub">{{ tpl.items|length }} {{ t('ingredients_word') }}</div>
+          <div class="product-row-sub">{{ tpl['items']|length }} {{ t('ingredients_word') }}</div>
         </div>
         <div class="product-row-right">
           <span class="product-row-chevron template-row-chevron" id="tpl-chevron-{{ tpl.template.id }}">›</span>
@@ -261,7 +261,7 @@
         </div>
 
         <div style="margin-bottom:14px;">
-          {% for it in tpl.items %}
+          {% for it in tpl['items'] %}
           <span class="recipe-chip">
             {{ it.material_name }} — {{ it.batch_qty|round(4) }}{{ it.unit }}
             <form method="POST" action="{{ url_for('remove_template_item', item_id=it.id) }}" class="inline-form" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -406,7 +406,7 @@
 
       {% if item.recipe %}
       <form method="POST" action="{{ url_for('save_product_as_template', product_id=item.product.id) }}" class="inline-form" style="margin-top:8px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;" onclick="event.stopPropagation();"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="text" name="template_name" placeholder="{{ t('preset_name_ph') }}" style="max-width:160px;" required>
+        <input type="text" name="template_name" autocomplete="off" placeholder="{{ t('preset_name_ph') }}" style="max-width:160px;" required>
         <button type="submit" class="secondary btn-sm">{{ t('save_as_preset_btn') }}</button>
       </form>
       {% endif %}

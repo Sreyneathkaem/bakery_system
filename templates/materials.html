@@ -164,7 +164,7 @@
     <form method="POST" action="{{ url_for('add_material') }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="name">{{ t('name') }}</label>
-        <input type="text" id="name" name="name" placeholder="{{ t('material_name_ph') }}" required>
+        <input type="text" id="name" name="name" autocomplete="off" placeholder="{{ t('material_name_ph') }}" required>
       </div>
       <div class="field">
         <label for="stock_qty">{{ t('starting_stock') }}</label>
@@ -360,7 +360,7 @@
       <form method="POST" action="{{ url_for('edit_material', material_id=m.id) }}" class="form-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="field">
           <label>{{ t('name') }}</label>
-          <input type="text" name="name" value="{{ m.name }}" required>
+          <input type="text" name="name" value="{{ m.name }}" autocomplete="off" required>
         </div>
         <div class="field">
           <label>{{ t('unit') }}</label>
