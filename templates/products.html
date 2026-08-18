@@ -209,6 +209,23 @@
   // with ?open=<product_id> so this product's panel re-expands instead of
   // the whole list collapsing — lets her add several ingredients to the
   // same product in a row without re-finding and re-tapping it each time.
+  // Same idea as the product ?open= handling above, but for recipe
+  // presets: after adding/removing a preset ingredient, the server
+  // redirects back with ?open_template=<id> so the presets card expands,
+  // the right preset re-opens, and the page scrolls to it — instead of
+  // reloading collapsed at the top and making her scroll + re-tap it
+  // after every single material she adds.
+  {% if open_template_id %}
+  document.addEventListener('DOMContentLoaded', function () {
+    const card = document.getElementById('templates-card');
+    const btn = document.getElementById('toggle-templates-btn');
+    if (card) { card.style.display = 'block'; }
+    if (btn) { btn.textContent = '{{ t("close_btn") }}'; }
+    toggleTemplateDetail({{ open_template_id }});
+    const row = document.getElementById('tpl-detail-{{ open_template_id }}');
+    if (row) { row.scrollIntoView({ block: 'nearest' }); }
+  });
+  {% endif %}
   {% if open_product_id %}
   document.addEventListener('DOMContentLoaded', function () {
     toggleProductDetail({{ open_product_id }});

@@ -1173,11 +1173,13 @@ def products():
         templates_with_items.append({"template": tpl, "items": items})
 
     open_product_id = request.args.get("open", type=int)
+    open_template_id = request.args.get("open_template", type=int)
     return render_template(
         "products.html",
         products=products_with_recipes,
         all_materials=all_materials,
         open_product_id=open_product_id,
+        open_template_id=open_template_id,
         templates=templates_with_items,
     )
 
@@ -1384,9 +1386,11 @@ def add_template():
         flash(g.t("flash_template_name_required"), "error")
         return redirect(url_for("products"))
     try:
-        db.execute("INSERT INTO recipe_templates (name) VALUES (?)", (name,))
+        cursor = db.execute("INSERT INTO recipe_templates (name) VALUES (?) RETURNING id", (name,))
+        new_id = cursor.fetchone()["id"]
         db.commit()
         flash(g.t("flash_template_added", name=name), "success")
+        return redirect(url_for("products", open_template=new_id))
     except psycopg2.IntegrityError:
         flash(g.t("flash_template_exists", name=name), "error")
     return redirect(url_for("products"))
@@ -1418,7 +1422,7 @@ def add_template_item(template_id):
 
     if not material_id or entered_amount <= 0:
         flash(g.t("flash_recipe_invalid"), "error")
-        return redirect(url_for("products"))
+        return redirect(url_for("products", open_template=template_id))
 
     material = db.execute("SELECT unit FROM materials WHERE id = ?", (material_id,)).fetchone()
     base_unit = material["unit"] if material else entered_unit
@@ -1437,17 +1441,18 @@ def add_template_item(template_id):
         )
     db.commit()
     flash(g.t("flash_template_updated"), "success")
-    return redirect(url_for("products"))
+    return redirect(url_for("products", open_template=template_id))
 
 
 @app.route("/templates/items/<int:item_id>/remove", methods=["POST"])
 @login_required
 def remove_template_item(item_id):
     db = get_db()
+    row = db.execute("SELECT template_id FROM recipe_template_items WHERE id = ?", (item_id,)).fetchone()
     db.execute("DELETE FROM recipe_template_items WHERE id = ?", (item_id,))
     db.commit()
     flash(g.t("flash_template_item_removed"), "success")
-    return redirect(url_for("products"))
+    return redirect(url_for("products", open_template=row["template_id"] if row else None))
 
 
 @app.route("/products/<int:product_id>/apply-template", methods=["POST"])
